@@ -1,0 +1,160 @@
+"""Index a local folder -- walk, parse, summarize, save.
+
+This is a thin wrapper that delegates discovery to ``ironmunch.discovery``
+(already extracted and ported). File security filtering (symlinks, secrets,
+path traversal) is handled by ``discover_local_files()``.
+"""
+
+import os
+from pathlib import Path
+from typing import Optional
+
+from ..discovery import discover_local_files
+from ..parser import parse_file, LANGUAGE_EXTENSIONS
+from ..security import sanitize_repo_identifier
+from ..core.errors import sanitize_error
+from ..core.limits import MAX_FILE_COUNT
+from ..core.validation import validate_path, ValidationError
+from ..storage import IndexStore
+from ..summarizer import summarize_symbols
+
+
+def index_folder(
+    path: str,
+    use_ai_summaries: bool = True,
+    storage_path: Optional[str] = None,
+    extra_ignore_patterns: Optional[list[str]] = None,
+    follow_symlinks: bool = False,
+) -> dict:
+    """Index a local folder containing source code.
+
+    Args:
+        path: Path to local folder (absolute or relative).
+        use_ai_summaries: Whether to use AI for symbol summaries.
+        storage_path: Custom storage path (default: ~/.code-index/).
+        extra_ignore_patterns: Additional gitignore-style patterns to exclude.
+        follow_symlinks: Whether to follow symlinks (default False for safety).
+
+    Returns:
+        Dict with indexing results.
+    """
+    # Resolve folder path
+    folder_path = Path(path).expanduser().resolve()
+
+    if not folder_path.exists():
+        return {"success": False, "error": f"Folder not found: {path}"}
+
+    if not folder_path.is_dir():
+        return {"success": False, "error": f"Path is not a directory: {path}"}
+
+    warnings: list[str] = []
+
+    try:
+        # Discover source files (with security filtering via ironmunch.discovery)
+        source_files, discover_warnings = discover_local_files(
+            folder_path,
+            extra_ignore_patterns=extra_ignore_patterns,
+            follow_symlinks=follow_symlinks,
+        )
+        warnings.extend(discover_warnings)
+
+        if not source_files:
+            return {"success": False, "error": "No source files found"}
+
+        # Read and parse files
+        all_symbols = []
+        languages: dict[str, int] = {}
+        raw_files: dict[str, str] = {}
+        parsed_files: list[str] = []
+
+        for file_path in source_files:
+            # --- security gate: re-validate path before reading (defense in depth) ---
+            try:
+                resolved = file_path.resolve()
+                resolved_root = folder_path.resolve()
+                if not str(resolved).startswith(str(resolved_root) + os.sep):
+                    continue
+            except (OSError, ValueError):
+                continue
+
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="replace")
+            except Exception as e:
+                warnings.append(f"Failed to read {file_path}: {e}")
+                continue
+
+            # Get relative path for storage
+            try:
+                rel_path = file_path.relative_to(folder_path).as_posix()
+            except ValueError:
+                warnings.append(f"Could not get relative path for {file_path}")
+                continue
+
+            # Determine language from extension
+            ext = file_path.suffix
+            language = LANGUAGE_EXTENSIONS.get(ext)
+
+            if not language:
+                continue
+
+            # Parse file
+            try:
+                symbols = parse_file(content, rel_path, language)
+                if symbols:
+                    all_symbols.extend(symbols)
+                    languages[language] = languages.get(language, 0) + 1
+                    raw_files[rel_path] = content
+                    parsed_files.append(rel_path)
+            except Exception as e:
+                warnings.append(f"Failed to parse {rel_path}: {e}")
+                continue
+
+        if not all_symbols:
+            return {"success": False, "error": "No symbols extracted from files"}
+
+        # Generate summaries
+        all_symbols = summarize_symbols(all_symbols, use_ai=use_ai_summaries)
+
+        # Create repo identifier from folder path
+        repo_name = folder_path.name
+        owner = "local"
+
+        # --- security gate: validate generated identifiers ---
+        try:
+            sanitize_repo_identifier(owner)
+            sanitize_repo_identifier(repo_name)
+        except Exception as exc:
+            return {"success": False, "error": sanitize_error(exc)}
+
+        # Save index
+        store = IndexStore(base_path=storage_path)
+        store.save_index(
+            owner=owner,
+            name=repo_name,
+            source_files=parsed_files,
+            symbols=all_symbols,
+            raw_files=raw_files,
+            languages=languages,
+        )
+
+        result: dict = {
+            "success": True,
+            "repo": f"{owner}/{repo_name}",
+            "folder_path": str(folder_path),
+            "indexed_at": store.load_index(owner, repo_name).indexed_at,
+            "file_count": len(parsed_files),
+            "symbol_count": len(all_symbols),
+            "languages": languages,
+            "files": parsed_files[:20],  # Limit files in response
+        }
+
+        if warnings:
+            result["warnings"] = warnings
+
+        if len(source_files) >= MAX_FILE_COUNT:
+            result["note"] = f"Folder has many files; indexed first {MAX_FILE_COUNT}"
+
+        return result
+
+    except Exception as e:
+        return {"success": False, "error": sanitize_error(e)}
