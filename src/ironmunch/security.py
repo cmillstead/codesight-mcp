@@ -103,12 +103,14 @@ def sanitize_repo_identifier(identifier: str) -> str:
     """Validate a repository owner or name identifier.
 
     Allows: alphanumeric, dash, underscore, dot.
-    Rejects: empty, slashes, null bytes, traversal sequences.
+    Rejects: empty, slashes, null bytes, traversal sequences (..).
     """
     if not identifier:
         raise ValidationError("Repository identifier is empty")
     if "\x00" in identifier:
         raise ValidationError("Repository identifier contains null byte")
+    if ".." in identifier:
+        raise ValidationError("Repository identifier contains traversal sequence")
     if not _REPO_ID_PATTERN.match(identifier):
         raise ValidationError(
             f"Repository identifier contains unsafe characters"
