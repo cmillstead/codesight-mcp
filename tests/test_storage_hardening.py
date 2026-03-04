@@ -150,3 +150,49 @@ class TestIncrementalSaveDeletedFilesTraversal:
             )
 
             assert not old_file.exists(), "Legitimate deleted file should be removed"
+
+
+class TestBasePathPermissions:
+    """SEC-LOW-4: IndexStore base_path must be created with 0o700 permissions."""
+
+    def test_base_path_mode_is_0o700(self):
+        """base_path must have mode 0o700 after IndexStore construction."""
+        with tempfile.TemporaryDirectory() as storage_tmp:
+            base = Path(storage_tmp) / "idx"
+            store = IndexStore(base_path=str(base))
+            mode = os.stat(str(base)).st_mode & 0o777
+            assert mode == 0o700, (
+                f"base_path mode should be 0o700, got 0o{mode:o}"
+            )
+
+
+class TestLoadIndexNoFollow:
+    """SEC-LOW-2: load_index must reject symlinks (O_NOFOLLOW)."""
+
+    def test_symlink_index_returns_none(self):
+        """load_index must return None when the index file is a symlink."""
+        with tempfile.TemporaryDirectory() as storage_tmp:
+            with tempfile.TemporaryDirectory() as other_tmp:
+                store = IndexStore(base_path=storage_tmp)
+
+                # Create a real index file first
+                store.save_index(
+                    owner="test", name="repo",
+                    source_files=["main.py"],
+                    symbols=[], raw_files={"main.py": "x = 1"},
+                    languages={"python": 1},
+                )
+
+                # Locate the real index file and replace it with a symlink
+                index_file = Path(storage_tmp) / "test__repo.json"
+                assert index_file.exists()
+                decoy = Path(other_tmp) / "decoy.txt"
+                decoy.write_text("not a valid index")
+                index_file.unlink()
+                index_file.symlink_to(decoy)
+
+                # load_index must return None rather than reading the symlink target
+                result = store.load_index("test", "repo")
+                assert result is None, (
+                    "load_index must return None for a symlink index file"
+                )

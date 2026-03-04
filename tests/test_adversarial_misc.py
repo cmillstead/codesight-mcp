@@ -123,3 +123,38 @@ class TestIndexFolderDefaultDeny:
                         storage_path=storage_tmp,
                     )
                     assert result["success"] is True
+
+
+class TestAllowedRootsLeadingColon:
+    """SEC-LOW-1: IRONMUNCH_ALLOWED_ROOTS with leading colon must not allow CWD."""
+
+    def test_leading_colon_rejected(self):
+        """A leading colon must not silently add CWD to the allowlist."""
+        import os
+        import tempfile
+        from unittest.mock import patch
+        from ironmunch.tools.index_folder import index_folder
+
+        with tempfile.TemporaryDirectory() as safe_tmp:
+            with tempfile.TemporaryDirectory() as cwd_tmp:
+                (Path(cwd_tmp) / "test.py").write_text("def hello(): pass\n")
+                # Leading colon: empty entry before safe_tmp
+                roots = ":" + safe_tmp
+                with patch.dict(os.environ, {"IRONMUNCH_ALLOWED_ROOTS": roots}):
+                    result = index_folder(path=cwd_tmp, use_ai_summaries=False)
+                    # Must fail — CWD is not in the allowlist
+                    assert result["success"] is False, (
+                        "Leading colon in IRONMUNCH_ALLOWED_ROOTS must not allow CWD: " + repr(result)
+                    )
+
+    def test_only_colons_rejected(self):
+        """IRONMUNCH_ALLOWED_ROOTS set to only colons must return an error."""
+        import os
+        import tempfile
+        from unittest.mock import patch
+        from ironmunch.tools.index_folder import index_folder
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"IRONMUNCH_ALLOWED_ROOTS": ":::"}):
+                result = index_folder(path=tmp, use_ai_summaries=False)
+                assert result["success"] is False

@@ -131,8 +131,8 @@ def _extract_symbol(
     # Build signature and sanitize secrets at parse time (SEC-HIGH-1)
     signature = sanitize_signature_for_api(_build_signature(node, spec, source_bytes))
 
-    # Extract docstring
-    docstring = _extract_docstring(node, spec, source_bytes)
+    # Extract docstring and sanitize secrets at parse time (SEC-HIGH-1)
+    docstring = sanitize_signature_for_api(_extract_docstring(node, spec, source_bytes))
 
     # Extract decorators
     decorators = _extract_decorators(node, spec, source_bytes)

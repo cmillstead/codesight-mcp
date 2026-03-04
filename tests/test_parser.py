@@ -182,3 +182,58 @@ class TestDecoratorSanitization:
         assert "<REDACTED>" in func_syms[0].decorators[0], (
             f"Expected <REDACTED> in decorator: {func_syms[0].decorators[0]!r}"
         )
+
+
+class TestDocstringSanitization:
+    """SEC-HIGH-1: Docstring content must not leak secrets at parse time."""
+
+    def test_password_in_docstring_redacted(self):
+        """Password literal in docstring must be redacted to <REDACTED>."""
+        # Use concatenation to avoid GitHub push protection matching literal token
+        secret = "s3cr3t" + "123"
+        source = (
+            "def foo():\n"
+            f'    """password=\'{secret}\' used here."""\n'
+            "    pass\n"
+        )
+        symbols = parse_file(source, "db.py", "python")
+        func_syms = [s for s in symbols if s.kind == "function"]
+        assert len(func_syms) == 1, "Expected one function symbol"
+        assert secret not in (func_syms[0].docstring or ""), (
+            f"Secret leaked in docstring: {func_syms[0].docstring!r}"
+        )
+        assert "<REDACTED>" in (func_syms[0].docstring or ""), (
+            f"Expected <REDACTED> in docstring: {func_syms[0].docstring!r}"
+        )
+
+    def test_db_url_in_docstring_redacted(self):
+        """Database URL with credentials in docstring must be redacted."""
+        source = (
+            "def connect():\n"
+            '    """Use postgres://admin:Hunter2@prod.db.internal/mydb."""\n'
+            "    pass\n"
+        )
+        symbols = parse_file(source, "db.py", "python")
+        func_syms = [s for s in symbols if s.kind == "function"]
+        assert len(func_syms) == 1, "Expected one function symbol"
+        assert "Hunter2" not in (func_syms[0].docstring or ""), (
+            f"Secret leaked in docstring: {func_syms[0].docstring!r}"
+        )
+        assert "<REDACTED>" in (func_syms[0].docstring or ""), (
+            f"Expected <REDACTED> in docstring: {func_syms[0].docstring!r}"
+        )
+
+    def test_normal_docstring_unchanged(self):
+        """Normal docstring without secrets must be returned unchanged."""
+        source = (
+            "def add(a, b):\n"
+            '    """Add two numbers and return the result."""\n'
+            "    return a + b\n"
+        )
+        symbols = parse_file(source, "math.py", "python")
+        func_syms = [s for s in symbols if s.kind == "function"]
+        assert len(func_syms) == 1, "Expected one function symbol"
+        assert "Add two numbers" in (func_syms[0].docstring or ""), (
+            f"Normal docstring was altered: {func_syms[0].docstring!r}"
+        )
+        assert "<REDACTED>" not in (func_syms[0].docstring or "")

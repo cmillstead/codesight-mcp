@@ -49,7 +49,11 @@ def index_folder(
             "error": "IRONMUNCH_ALLOWED_ROOTS not configured. "
                      "Set it to a colon-separated list of allowed directories.",
         }
-    allowed = [Path(r.strip()).expanduser().resolve() for r in allowed_roots.split(":")]
+    # SEC-LOW-1: filter empty entries to prevent Path("").resolve() == CWD
+    parts = [r.strip() for r in allowed_roots.split(":") if r.strip()]
+    if not parts:
+        return {"success": False, "error": "IRONMUNCH_ALLOWED_ROOTS is empty after parsing"}
+    allowed = [Path(p).expanduser().resolve() for p in parts]
     if not any(
         str(folder_path).startswith(str(a) + os.sep) or folder_path == a
         for a in allowed

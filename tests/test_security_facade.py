@@ -164,6 +164,39 @@ class TestSanitizeSignatureForApi:
         result = sanitize_signature_for_api(sig)
         assert "AKIA" not in result
 
+    def test_huggingface_token_redacted(self):
+        """SEC-MED-1: HuggingFace hf_ tokens must be redacted."""
+        # Use concatenation to avoid push protection
+        token = "hf_" + "a" * 34
+        sig = f'TOKEN = "{token}"'
+        result = sanitize_signature_for_api(sig)
+        assert token not in result
+        assert "<REDACTED>" in result
+
+    def test_npm_token_redacted(self):
+        """SEC-MED-1: npm npm_ tokens must be redacted."""
+        token = "npm_" + "a" * 36
+        sig = f'TOKEN = "{token}"'
+        result = sanitize_signature_for_api(sig)
+        assert token not in result
+        assert "<REDACTED>" in result
+
+    def test_pypi_token_redacted(self):
+        """SEC-MED-1: PyPI pypi- tokens must be redacted."""
+        token = "pypi-" + "a" * 32
+        sig = f'TOKEN = "{token}"'
+        result = sanitize_signature_for_api(sig)
+        assert token not in result
+        assert "<REDACTED>" in result
+
+    def test_google_api_key_redacted(self):
+        """SEC-MED-1: Google API keys (AIza prefix) must be redacted."""
+        token = "AIza" + "a" * 35
+        sig = f'TOKEN = "{token}"'
+        result = sanitize_signature_for_api(sig)
+        assert token not in result
+        assert "<REDACTED>" in result
+
 
 class TestSecretDetectionCaseInsensitive:
     """SEC-MED-3: SECRET_PATTERNS must be case-insensitive."""
