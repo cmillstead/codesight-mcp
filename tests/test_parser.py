@@ -2,6 +2,7 @@
 
 import pytest
 from ironmunch.parser import parse_file, Symbol
+from ironmunch.parser.extractor import _get_parser
 
 
 PYTHON_SOURCE = '''
@@ -77,3 +78,15 @@ def test_symbol_byte_offsets():
         # Line numbers should be positive
         assert sym.line > 0
         assert sym.end_line >= sym.line
+
+
+class TestGetParserAllowlist:
+    """SEC-LOW-5: _get_parser must reject unsupported languages."""
+
+    def test_unsupported_language_raises(self):
+        with pytest.raises(ValueError, match="Unsupported language"):
+            _get_parser("malicious")
+
+    def test_supported_language_works(self):
+        parser = _get_parser("python")
+        assert parser is not None

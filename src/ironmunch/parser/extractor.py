@@ -6,6 +6,8 @@ from tree_sitter import Language, Parser
 # Individual language bindings — only the 7 languages ironmunch supports
 _LANGUAGE_BINDINGS = {}
 
+_ALLOWED_LANGUAGES = {"python", "javascript", "typescript", "go", "rust", "java", "php"}
+
 # Some tree-sitter packages use language_<name>() instead of language()
 _LANGUAGE_FUNC_MAP = {
     "typescript": ("tree_sitter_typescript", "language_typescript"),
@@ -14,6 +16,8 @@ _LANGUAGE_FUNC_MAP = {
 
 def _get_parser(lang_name: str) -> Parser:
     """Get a tree-sitter parser for a language, loading binding on first use."""
+    if lang_name not in _ALLOWED_LANGUAGES:
+        raise ValueError(f"Unsupported language: {lang_name}")
     if lang_name not in _LANGUAGE_BINDINGS:
         import importlib
         if lang_name in _LANGUAGE_FUNC_MAP:

@@ -2,6 +2,7 @@
 
 import re
 import time
+from pathlib import Path
 
 import pytest
 
@@ -70,6 +71,7 @@ class TestIndexFolderPathLeak:
     def test_no_folder_path_in_response(self):
         """The response must not contain folder_path."""
         import tempfile, os
+        from unittest.mock import patch
         from ironmunch.tools.index_folder import index_folder
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -78,10 +80,46 @@ class TestIndexFolderPathLeak:
                 f.write("def hello():\n    pass\n")
 
             with tempfile.TemporaryDirectory() as storage_tmp:
-                result = index_folder(
-                    path=tmp,
-                    use_ai_summaries=False,
-                    storage_path=storage_tmp,
-                )
-                assert "folder_path" not in result, \
-                    f"folder_path leaked in response: {result.get('folder_path')}"
+                with patch.dict(os.environ, {"IRONMUNCH_ALLOWED_ROOTS": tmp}):
+                    result = index_folder(
+                        path=tmp,
+                        use_ai_summaries=False,
+                        storage_path=storage_tmp,
+                    )
+                    assert "folder_path" not in result, \
+                        f"folder_path leaked in response: {result.get('folder_path')}"
+
+
+class TestIndexFolderDefaultDeny:
+    """SEC-HIGH-1: index_folder must default-deny without allowlist."""
+
+    def test_no_allowlist_returns_error(self):
+        """index_folder must fail when IRONMUNCH_ALLOWED_ROOTS is unset."""
+        import tempfile, os
+        from unittest.mock import patch
+        from ironmunch.tools.index_folder import index_folder
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {}, clear=True):
+                # Ensure IRONMUNCH_ALLOWED_ROOTS is not set
+                os.environ.pop("IRONMUNCH_ALLOWED_ROOTS", None)
+                result = index_folder(path=tmp, use_ai_summaries=False)
+                assert result["success"] is False
+                assert "IRONMUNCH_ALLOWED_ROOTS" in result["error"]
+
+    def test_with_allowlist_works(self):
+        """index_folder should work when IRONMUNCH_ALLOWED_ROOTS is set."""
+        import tempfile, os
+        from unittest.mock import patch
+        from ironmunch.tools.index_folder import index_folder
+
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "test.py").write_text("def hello():\n    pass\n")
+            with tempfile.TemporaryDirectory() as storage_tmp:
+                with patch.dict(os.environ, {"IRONMUNCH_ALLOWED_ROOTS": tmp}):
+                    result = index_folder(
+                        path=tmp,
+                        use_ai_summaries=False,
+                        storage_path=storage_tmp,
+                    )
+                    assert result["success"] is True

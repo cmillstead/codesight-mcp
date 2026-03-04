@@ -1033,16 +1033,16 @@ class TestRepoIdentifierExtremeEdition:
         result = sanitize_repo_identifier("-flag")
         assert result == "-flag"
 
-    def test_unicode_letters(self):
-        """Unicode word characters pass \\w."""
-        result = sanitize_repo_identifier("r\u00e9sum\u00e9")
-        assert result == "r\u00e9sum\u00e9"
+    def test_unicode_letters_rejected(self):
+        """Unicode word characters must be rejected (ASCII-only)."""
+        with pytest.raises(ValidationError, match="unsafe characters"):
+            sanitize_repo_identifier("r\u00e9sum\u00e9")
 
-    def test_cyrillic_homoglyph(self):
-        """Cyrillic 'a' (U+0430) vs Latin 'a' — homoglyph attack."""
+    def test_cyrillic_homoglyph_rejected(self):
+        """Cyrillic 'a' (U+0430) vs Latin 'a' — homoglyph attack must be blocked."""
         cyrillic_a = "\u0430"
-        result = sanitize_repo_identifier(f"{cyrillic_a}dmin")
-        assert result == f"{cyrillic_a}dmin"
+        with pytest.raises(ValidationError, match="unsafe characters"):
+            sanitize_repo_identifier(f"{cyrillic_a}dmin")
 
     def test_tab_in_identifier(self):
         """Tab character in identifier."""

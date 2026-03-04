@@ -13,6 +13,7 @@ from ironmunch.security import (
     is_binary_content,
     should_exclude_file,
     sanitize_repo_identifier,
+    sanitize_signature_for_api,
 )
 from ironmunch.core.validation import ValidationError
 
@@ -133,3 +134,86 @@ class TestRepoIdentifier:
     def test_semicolon_rejected(self):
         with pytest.raises(ValidationError):
             sanitize_repo_identifier("repo;rm -rf /")
+
+
+class TestSanitizeSignatureForApi:
+    def test_password_default_redacted(self):
+        sig = 'def connect(host, password="hunter2")'
+        result = sanitize_signature_for_api(sig)
+        assert "hunter2" not in result
+        assert "<REDACTED>" in result
+
+    def test_api_key_prefix_redacted(self):
+        sig = 'API_KEY = "ghp_abcdefghijklmnopqrstuvwxyz1234567890"'
+        result = sanitize_signature_for_api(sig)
+        assert "ghp_" not in result
+        assert "<REDACTED>" in result
+
+    def test_sk_ant_prefix_redacted(self):
+        sig = 'def call_api(key="sk-ant-api03-abcdefghijklmnopqrst")'
+        result = sanitize_signature_for_api(sig)
+        assert "sk-ant" not in result
+
+    def test_clean_signature_unchanged(self):
+        sig = "def hello(name: str) -> str"
+        result = sanitize_signature_for_api(sig)
+        assert result == sig
+
+    def test_aws_key_redacted(self):
+        sig = 'AWS_KEY = "AKIAIOSFODNN7EXAMPLE"'
+        result = sanitize_signature_for_api(sig)
+        assert "AKIA" not in result
+
+
+class TestSecretDetectionCaseInsensitive:
+    """SEC-MED-3: SECRET_PATTERNS must be case-insensitive."""
+
+    def test_uppercase_env(self):
+        assert is_secret_file(".ENV")
+
+    def test_mixed_case_env(self):
+        assert is_secret_file(".Env")
+
+    def test_uppercase_pem(self):
+        assert is_secret_file("CERT.PEM")
+
+    def test_application_properties(self):
+        assert is_secret_file("application.properties")
+
+    def test_p8_key(self):
+        assert is_secret_file("AuthKey.p8")
+
+    def test_asc_key(self):
+        assert is_secret_file("pubkey.asc")
+
+    def test_appsettings_json(self):
+        assert is_secret_file("appsettings.Development.json")
+
+    def test_yarnrc(self):
+        assert is_secret_file(".yarnrc.yml")
+
+
+class TestRepoIdentifierDoubleUnderscore:
+    """SEC-MED-5: __ separator must be rejected in repo identifiers."""
+
+    def test_double_underscore_rejected(self):
+        with pytest.raises(ValidationError, match="reserved separator"):
+            sanitize_repo_identifier("a__b")
+
+    def test_single_underscore_allowed(self):
+        assert sanitize_repo_identifier("my_repo") == "my_repo"
+
+
+class TestRepoIdentifierAsciiOnly:
+    """SEC-LOW-2: repo identifiers must be ASCII only."""
+
+    def test_unicode_rejected(self):
+        with pytest.raises(ValidationError):
+            sanitize_repo_identifier("caf\u00e9")
+
+    def test_ascii_allowed(self):
+        assert sanitize_repo_identifier("cafe") == "cafe"
+
+    def test_cjk_rejected(self):
+        with pytest.raises(ValidationError):
+            sanitize_repo_identifier("\u4e16\u754c")

@@ -301,7 +301,7 @@ async def fetch_repo_tree(
     if token:
         headers["Authorization"] = f"token {token}"
 
-    async with httpx.AsyncClient(timeout=GITHUB_API_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=GITHUB_API_TIMEOUT, follow_redirects=False) as client:
         response = await client.get(url, params=params, headers=headers)
         response.raise_for_status()
         data = response.json()
@@ -334,7 +334,7 @@ async def fetch_file_content(
     if token:
         headers["Authorization"] = f"token {token}"
 
-    async with httpx.AsyncClient(timeout=GITHUB_API_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=GITHUB_API_TIMEOUT, follow_redirects=False) as client:
         response = await client.get(url, headers=headers)
         response.raise_for_status()
         return response.text

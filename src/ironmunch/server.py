@@ -30,7 +30,7 @@ from .tools.invalidate_cache import invalidate_cache
 from .tools.search_text import search_text
 from .tools.get_repo_outline import get_repo_outline
 from .core.errors import sanitize_error
-from .core.limits import MAX_ARGUMENT_LENGTH, MAX_BATCH_SYMBOLS
+from .core.limits import MAX_ARGUMENT_LENGTH, MAX_BATCH_SYMBOLS, MAX_FILE_PATTERN_LENGTH
 
 
 # -- Tool description warning suffixes ----------------------------------------
@@ -369,9 +369,12 @@ def _sanitize_arguments(name: str, arguments: dict) -> dict | str:
         if not q or not q.strip():
             return "Search query cannot be empty"
 
-    # Cap symbol_ids list length
+    # Cap symbol_ids list length and validate items
     if name == "get_symbols" and "symbol_ids" in arguments:
-        arguments["symbol_ids"] = arguments["symbol_ids"][:MAX_BATCH_SYMBOLS]
+        arguments["symbol_ids"] = [
+            sid for sid in arguments["symbol_ids"][:MAX_BATCH_SYMBOLS]
+            if isinstance(sid, str) and len(sid) <= MAX_ARGUMENT_LENGTH
+        ]
 
     # Coerce boolean flags
     for flag in ("follow_symlinks", "use_ai_summaries", "verify"):
@@ -385,6 +388,10 @@ def _sanitize_arguments(name: str, arguments: dict) -> dict | str:
             arguments["extra_ignore_patterns"] = [
                 p for p in patterns if isinstance(p, str)
             ]
+
+    # Cap file_pattern length to prevent pathological glob matching
+    if "file_pattern" in arguments and isinstance(arguments["file_pattern"], str):
+        arguments["file_pattern"] = arguments["file_pattern"][:MAX_FILE_PATTERN_LENGTH]
 
     return arguments
 

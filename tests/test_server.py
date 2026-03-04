@@ -200,6 +200,24 @@ class TestCallToolInputBounds:
         assert isinstance(result, dict)
         assert result["follow_symlinks"] is True
 
+    def test_symbol_ids_oversized_items_filtered(self):
+        """SEC-LOW-3: oversized symbol_ids must be filtered."""
+        from ironmunch.server import _sanitize_arguments, MAX_ARGUMENT_LENGTH
+        args = {"repo": "test/repo", "symbol_ids": ["ok", "x" * (MAX_ARGUMENT_LENGTH + 1)]}
+        result = _sanitize_arguments("get_symbols", args)
+        assert isinstance(result, dict)
+        assert len(result["symbol_ids"]) == 1
+        assert result["symbol_ids"][0] == "ok"
+
+    def test_file_pattern_capped(self):
+        """SEC-LOW-6: file_pattern must be capped to MAX_FILE_PATTERN_LENGTH."""
+        from ironmunch.server import _sanitize_arguments
+        from ironmunch.core.limits import MAX_FILE_PATTERN_LENGTH
+        args = {"repo": "test/repo", "query": "foo", "file_pattern": "x" * 500}
+        result = _sanitize_arguments("search_text", args)
+        assert isinstance(result, dict)
+        assert len(result["file_pattern"]) == MAX_FILE_PATTERN_LENGTH
+
 
 class TestRateLimiting:
     """M-5: Rate limiting prevents tool call flooding."""

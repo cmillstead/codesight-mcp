@@ -331,6 +331,88 @@ class TestSaveIndexPathTraversal:
             assert not evil_path.exists(), "Incremental traversal write escaped!"
 
 
+class TestSafeWriteContentSymlink:
+    """SEC-MED-2: _safe_write_content must reject symlink destinations."""
+
+    def test_symlink_write_rejected(self):
+        """Writing to a symlink should return False (O_NOFOLLOW)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = IndexStore(tmp)
+            content_dir = Path(tmp) / "owner__repo"
+            content_dir.mkdir()
+
+            # Create a symlink target outside content dir
+            escape_dir = Path(tmp) / "escape"
+            escape_dir.mkdir()
+            target = escape_dir / "evil.py"
+
+            # Create a symlink inside content dir pointing to escape
+            symlink = content_dir / "evil.py"
+            symlink.symlink_to(str(target))
+
+            # _safe_write_content should refuse to follow the symlink
+            result = store._safe_write_content(content_dir, "evil.py", "malicious content")
+            assert result is False, "O_NOFOLLOW should reject symlink write"
+            assert not target.exists(), "Content must not be written through symlink"
+
+    def test_normal_write_succeeds(self):
+        """Normal (non-symlink) write should succeed."""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = IndexStore(tmp)
+            content_dir = Path(tmp) / "owner__repo"
+            content_dir.mkdir()
+
+            result = store._safe_write_content(content_dir, "test.py", "def hello(): pass")
+            assert result is True
+            assert (content_dir / "test.py").read_text() == "def hello(): pass"
+
+    def test_temp_file_permissions(self):
+        """Temp files created during save_index should have 0o600 permissions."""
+        with tempfile.TemporaryDirectory() as tmp:
+            from ironmunch.parser.symbols import Symbol
+            sym = Symbol(
+                id="test.py::foo#function",
+                file="test.py", name="foo", qualified_name="foo",
+                kind="function", language="python", signature="def foo():",
+                line=1, end_line=2, byte_offset=0, byte_length=16,
+                content_hash="a" * 64,
+            )
+            store = IndexStore(tmp)
+            store.save_index(
+                owner="owner", name="repo",
+                source_files=["test.py"],
+                symbols=[sym],
+                raw_files={"test.py": "def foo(): pass\n"},
+                languages={"python": 1},
+            )
+            index_path = Path(tmp) / "owner__repo.json"
+            mode = oct(index_path.stat().st_mode & 0o777)
+            assert mode == "0o600", f"Index file should be 0o600, got {mode}"
+
+
+class TestStaleTempCleanup:
+    """SEC-LOW-7: IndexStore must clean up stale .json.tmp files on init."""
+
+    def test_stale_tmp_cleaned_on_init(self):
+        """Stale .json.tmp files should be removed when IndexStore is created."""
+        with tempfile.TemporaryDirectory() as tmp:
+            stale = Path(tmp) / "owner__repo.json.tmp"
+            stale.write_text('{"stale": true}')
+            assert stale.exists()
+
+            IndexStore(tmp)  # Should clean up stale tmp
+            assert not stale.exists(), "Stale .json.tmp was not cleaned up"
+
+    def test_valid_json_not_cleaned(self):
+        """Normal .json files must NOT be cleaned up."""
+        with tempfile.TemporaryDirectory() as tmp:
+            normal = Path(tmp) / "owner__repo.json"
+            normal.write_text('{"valid": true}')
+
+            IndexStore(tmp)
+            assert normal.exists(), "Normal .json file was incorrectly removed"
+
+
 import ironmunch.core.roots as roots_mod
 from ironmunch.core.roots import init_storage_root, get_storage_root, RootNotInitializedError
 

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from ..parser.symbols import Symbol
+from ..security import sanitize_signature_for_api
 
 
 def extract_summary_from_docstring(docstring: str) -> str:
@@ -135,6 +136,7 @@ class BatchSummarizer:
 
         for i, sym in enumerate(symbols, 1):
             safe_sig = sym.signature.replace("\n", " ").replace("\r", " ")[:200]
+            safe_sig = sanitize_signature_for_api(safe_sig)
             lines.append(f"  [{i}] {sym.kind}: <<<SIG>>>{safe_sig}<<<END_SIG>>>")
 
         lines.extend([

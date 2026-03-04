@@ -35,6 +35,8 @@ def _get_git_head(repo_path: Path) -> Optional[str]:
                 "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
                 "HOME": os.environ.get("HOME", ""),
                 "GIT_TERMINAL_PROMPT": "0",
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_GLOBAL": "/dev/null",
             },
         )
         if result.returncode == 0:
@@ -154,6 +156,15 @@ class IndexStore:
 
         self.base_path.mkdir(parents=True, exist_ok=True)
         os.chmod(str(self.base_path), 0o700)
+        self._cleanup_stale_temps()
+
+    def _cleanup_stale_temps(self):
+        """Remove stale .json.tmp files left by crashed writes."""
+        for tmp_file in self.base_path.glob("*.json.tmp"):
+            try:
+                tmp_file.unlink()
+            except OSError:
+                pass
 
     def _index_path(self, owner: str, name: str) -> Path:
         """Path to index JSON file."""
@@ -215,9 +226,9 @@ class IndexStore:
         index_path = self._index_path(owner, name)
         tmp_path = index_path.with_suffix(".json.tmp")
         try:
-            with open(tmp_path, "w", encoding="utf-8") as f:
+            fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(self._index_to_dict(index), f, indent=2)
-            os.chmod(str(tmp_path), 0o600)
             # Atomic rename (on POSIX; best-effort on Windows)
             tmp_path.replace(index_path)
         except Exception:
@@ -445,9 +456,9 @@ class IndexStore:
         index_path = self._index_path(owner, name)
         tmp_path = index_path.with_suffix(".json.tmp")
         try:
-            with open(tmp_path, "w", encoding="utf-8") as f:
+            fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(self._index_to_dict(updated), f, indent=2)
-            os.chmod(str(tmp_path), 0o600)
             tmp_path.replace(index_path)
         except Exception:
             tmp_path.unlink(missing_ok=True)
@@ -528,6 +539,9 @@ class IndexStore:
     def _safe_write_content(self, content_dir: Path, file_path: str, content: str) -> bool:
         """Write a file to the content directory after validating the path.
 
+        Uses O_NOFOLLOW to prevent symlink race (TOCTOU) between
+        containment check and file write.
+
         Returns True if written, False if path was rejected.
         """
         dest = (content_dir / file_path).resolve()
@@ -535,9 +549,23 @@ class IndexStore:
         if not str(dest).startswith(str(resolved_root) + os.sep):
             return False  # Traversal — reject silently
         dest.parent.mkdir(parents=True, exist_ok=True)
-        with open(dest, "w", encoding="utf-8") as f:
-            f.write(content)
-        os.chmod(str(dest), 0o600)
+        try:
+            fd = os.open(
+                str(dest),
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+                0o600,
+            )
+        except OSError:
+            return False  # Symlink or permission error — reject
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(content)
+        except Exception:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            raise
         return True
 
     def _symbol_to_dict(self, symbol: Symbol) -> dict:

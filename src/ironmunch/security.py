@@ -41,6 +41,14 @@ SECRET_PATTERNS = [
     "*.csr",
     # Encryption/vault
     ".sops.yaml", "vault.json",
+    # Java/JVM config
+    "application.properties", "application.yml",
+    # .NET config
+    "appsettings*.json",
+    # Node tooling
+    ".yarnrc.yml",
+    # Apple/PGP keys
+    "*.p8", "*.asc",
 ]
 
 # --- Binary extensions (ported from jcodemunch) ---
@@ -58,7 +66,7 @@ BINARY_EXTENSIONS = {
 
 # --- Repo identifier allowlist ---
 
-_REPO_ID_PATTERN = re.compile(r"^[\w\-.]+$")
+_REPO_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-.]+$")
 
 
 def validate_file_access(path: str, root: str) -> str:
@@ -87,8 +95,8 @@ def safe_read_file(abs_path: str, root: str) -> str:
 
 
 def is_secret_file(file_path: str) -> bool:
-    """Check if a file matches secret patterns."""
-    name = Path(file_path).name
+    """Check if a file matches secret patterns (case-insensitive)."""
+    name = Path(file_path).name.lower()
     return any(fnmatch(name, pat) for pat in SECRET_PATTERNS)
 
 
@@ -115,6 +123,30 @@ def should_exclude_file(
     return None
 
 
+# --- Inline secret patterns for content scanning ---
+
+_INLINE_SECRET_RE = re.compile(
+    r"("
+    # API key prefixes
+    r"sk-[a-zA-Z0-9_\-]{20,}"
+    r"|ghp_[a-zA-Z0-9]{36}"
+    r"|gho_[a-zA-Z0-9]{36}"
+    r"|github_pat_[a-zA-Z0-9_]{20,}"
+    r"|AKIA[A-Z0-9]{16}"
+    r"|xox[bprs]-[a-zA-Z0-9\-]{10,}"
+    r"|glpat-[a-zA-Z0-9\-]{20,}"
+    # Parameter defaults with secrets
+    r"|(?:password|passwd|secret|api_key|apikey|token|auth)\s*=\s*[\"'][^\"']{4,}[\"']"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def sanitize_signature_for_api(signature: str) -> str:
+    """Redact inline secrets from a code signature before sending to external APIs."""
+    return _INLINE_SECRET_RE.sub("<REDACTED>", signature)
+
+
 def sanitize_repo_identifier(identifier: str) -> str:
     """Validate a repository owner or name identifier.
 
@@ -127,6 +159,8 @@ def sanitize_repo_identifier(identifier: str) -> str:
         raise ValidationError("Repository identifier contains null byte")
     if ".." in identifier:
         raise ValidationError("Repository identifier contains traversal sequence")
+    if "__" in identifier:
+        raise ValidationError("Repository identifier contains reserved separator")
     if not _REPO_ID_PATTERN.match(identifier):
         raise ValidationError(
             f"Repository identifier contains unsafe characters"
