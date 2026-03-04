@@ -21,10 +21,14 @@ def init_storage_root(path: str) -> str:
 
     Resolves to canonical absolute path (symlinks resolved).
     Validates the path exists and is a directory.
+    Raises RuntimeError if already initialized.
 
     Returns the resolved path.
     """
     global _storage_root
+
+    if _storage_root is not None:
+        raise RuntimeError("Storage root already initialized")
 
     p = Path(path)
     if not p.exists():

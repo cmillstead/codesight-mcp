@@ -329,3 +329,72 @@ class TestSaveIndexPathTraversal:
             )
             evil_path = (Path(tmp) / ".." / "evil_incremental.py").resolve()
             assert not evil_path.exists(), "Incremental traversal write escaped!"
+
+
+import ironmunch.core.roots as roots_mod
+from ironmunch.core.roots import init_storage_root, get_storage_root, RootNotInitializedError
+
+
+class TestIndexSchemaValidation:
+    """M-1: Malformed index JSON must be handled gracefully."""
+
+    def test_missing_required_fields_returns_none(self):
+        """Index with missing fields must not crash."""
+        with tempfile.TemporaryDirectory() as tmp:
+            index_path = Path(tmp) / "bad-index.json"
+            index_path.write_text('{"repo": "bad/index"}')  # Missing most fields
+
+            store = IndexStore(tmp)
+            result = store.load_index("bad", "index")
+            assert result is None
+
+    def test_wrong_types_returns_none(self):
+        """Index with wrong field types must not crash."""
+        with tempfile.TemporaryDirectory() as tmp:
+            index_path = Path(tmp) / "bad-index.json"
+            index_path.write_text(json.dumps({
+                "repo": 12345,  # should be string
+                "owner": None,
+                "name": [],
+                "indexed_at": False,
+                "source_files": "not a list",
+                "languages": "not a dict",
+                "symbols": "not a list",
+                "index_version": "two",
+            }))
+
+            store = IndexStore(tmp)
+            result = store.load_index("bad", "index")
+            assert result is None
+
+
+class TestImmutableRoot:
+    """M-8: init_storage_root must only be callable once."""
+
+    def test_double_init_raises(self):
+        """Second call to init_storage_root must raise."""
+        old = roots_mod._storage_root
+        roots_mod._storage_root = None
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                init_storage_root(tmp)
+                with pytest.raises(RuntimeError, match="already initialized"):
+                    init_storage_root(tmp)
+        finally:
+            roots_mod._storage_root = old
+
+
+class TestListReposValidation:
+    """M-9: list_repos must skip malformed JSON files."""
+
+    def test_non_index_json_skipped(self):
+        """Random JSON files in base_path must not appear in results."""
+        with tempfile.TemporaryDirectory() as tmp:
+            # Create a non-index JSON file
+            (Path(tmp) / "random.json").write_text('{"not": "an index"}')
+
+            store = IndexStore(tmp)
+            repos = store.list_repos()
+            # Should not crash, and should not include the random file
+            for r in repos:
+                assert "repo" in r

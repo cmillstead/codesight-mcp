@@ -239,21 +239,36 @@ class IndexStore:
 
         # Version check
         stored_version = data.get("index_version", 1)
-        if stored_version > INDEX_VERSION:
-            return None  # Future version we can't read
+        if not isinstance(stored_version, int) or stored_version > INDEX_VERSION:
+            return None  # Future or invalid version we can't read
 
-        return CodeIndex(
-            repo=data["repo"],
-            owner=data["owner"],
-            name=data["name"],
-            indexed_at=data["indexed_at"],
-            source_files=data["source_files"],
-            languages=data["languages"],
-            symbols=data["symbols"],
-            index_version=stored_version,
-            file_hashes=data.get("file_hashes", {}),
-            git_head=data.get("git_head", ""),
-        )
+        # Schema validation — reject malformed indexes
+        required_fields = ("repo", "owner", "name", "indexed_at", "source_files", "languages", "symbols")
+        for fld in required_fields:
+            if fld not in data:
+                return None
+        if not isinstance(data["source_files"], list):
+            return None
+        if not isinstance(data["symbols"], list):
+            return None
+        if not isinstance(data["languages"], dict):
+            return None
+
+        try:
+            return CodeIndex(
+                repo=data["repo"],
+                owner=data["owner"],
+                name=data["name"],
+                indexed_at=data["indexed_at"],
+                source_files=data["source_files"],
+                languages=data["languages"],
+                symbols=data["symbols"],
+                index_version=stored_version,
+                file_hashes=data.get("file_hashes", {}),
+                git_head=data.get("git_head", ""),
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
 
     def get_symbol_content(
         self,
@@ -442,6 +457,10 @@ class IndexStore:
             try:
                 with open(index_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
+
+                # Validate required fields before accessing
+                if not all(k in data for k in ("repo", "indexed_at", "symbols", "source_files", "languages")):
+                    continue
 
                 repos.append({
                     "repo": data["repo"],

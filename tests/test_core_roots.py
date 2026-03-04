@@ -5,13 +5,21 @@ from pathlib import Path
 
 import pytest
 
+import ironmunch.core.roots as roots_mod
 from ironmunch.core.roots import init_storage_root, get_storage_root, RootNotInitializedError
+
+
+@pytest.fixture(autouse=True)
+def _reset_storage_root():
+    """Reset _storage_root before each test so init_storage_root can be called."""
+    old = roots_mod._storage_root
+    roots_mod._storage_root = None
+    yield
+    roots_mod._storage_root = old
 
 
 def test_get_before_init_raises():
     """Must call init before get."""
-    import ironmunch.core.roots as mod
-    mod._storage_root = None
     with pytest.raises(RootNotInitializedError):
         get_storage_root()
 
