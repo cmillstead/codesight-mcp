@@ -5,6 +5,7 @@ This is a thin wrapper that delegates discovery to ``ironmunch.discovery``
 path traversal) is handled by ``discover_local_files()``.
 """
 
+import errno
 import os
 from pathlib import Path
 from typing import Optional
@@ -97,9 +98,17 @@ def index_folder(
                 continue
 
             try:
-                content = file_path.read_text(encoding="utf-8", errors="replace")
-            except Exception as e:
-                warnings.append(f"Failed to read file")
+                fd = os.open(str(file_path), os.O_RDONLY | os.O_NOFOLLOW)
+                with os.fdopen(fd, encoding="utf-8", errors="replace") as fh:
+                    content = fh.read()
+            except OSError as e:
+                if e.errno == errno.ELOOP:
+                    warnings.append("Skipped 1 symlink file")
+                else:
+                    warnings.append("Failed to read file")
+                continue
+            except Exception:
+                warnings.append("Failed to read file")
                 continue
 
             # Get relative path for storage

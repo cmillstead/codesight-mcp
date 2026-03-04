@@ -7,6 +7,7 @@ Local discovery: walk filesystem with symlink/secret/binary/pattern filtering.
 GitHub discovery: fetch tree via API, then filter by extension/pattern/size.
 """
 
+import errno
 import os
 from pathlib import Path
 from typing import Optional
@@ -62,7 +63,9 @@ def _load_gitignore(folder_path: Path) -> Optional[pathspec.PathSpec]:
         try:
             if gitignore_path.stat().st_size > 65536:
                 return None  # Too large; skip to prevent DoS
-            content = gitignore_path.read_text(encoding="utf-8", errors="replace")
+            fd = os.open(str(gitignore_path), os.O_RDONLY | os.O_NOFOLLOW)
+            with os.fdopen(fd, encoding="utf-8", errors="replace") as fh:
+                content = fh.read()
             lines = content.splitlines()
             # SEC-LOW-3: cap pattern count to prevent pathspec regex DoS
             if len(lines) > 2000:
@@ -217,14 +220,18 @@ def discover_local_files(
                 skipped_binary_count += 1
                 continue
 
-            # Content-level binary sniff
+            # Content-level binary sniff (O_NOFOLLOW when not following symlinks: SEC-MED-2)
+            flags = os.O_RDONLY if follow_symlinks else os.O_RDONLY | os.O_NOFOLLOW
             try:
-                with open(file_path, "rb") as fh:
+                fd = os.open(str(file_path), flags)
+                with os.fdopen(fd, "rb") as fh:
                     head = fh.read(8192)
                 if is_binary_content(head):
                     skipped_binary_count += 1
                     continue
-            except OSError:
+            except OSError as e:
+                if e.errno == errno.ELOOP:
+                    skipped_binary_count += 1  # treat symlink-swapped file as skipped
                 continue
 
             files.append(file_path)
