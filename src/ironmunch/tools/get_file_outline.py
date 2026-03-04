@@ -68,7 +68,7 @@ def get_file_outline(
         "language": language,
         "symbols": symbols_output,
         "_meta": {
-            **make_meta(source="code_index", trusted=True),
+            **make_meta(source="code_index", trusted=False),
             "timing_ms": ms,
             "symbol_count": len(symbols_output),
         },

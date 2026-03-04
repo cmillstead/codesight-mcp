@@ -83,7 +83,7 @@ def search_symbols(
         "result_count": len(scored_results),
         "results": scored_results,
         "_meta": {
-            **make_meta(source="code_index", trusted=True),
+            **make_meta(source="code_index", trusted=False),
             "timing_ms": ms,
             "total_symbols": len(index.symbols),
             "truncated": len(results) > max_results,
