@@ -9,7 +9,7 @@ import hashlib
 import time
 from typing import Optional
 
-from ..security import validate_file_access, safe_read_file
+from ..security import validate_file_access, safe_read_file, sanitize_signature_for_api
 from ..core.limits import MAX_CONTEXT_LINES
 from ..core.boundaries import wrap_untrusted_content, make_meta
 from ..core.errors import sanitize_error
@@ -103,10 +103,10 @@ def get_symbol(
         "end_line": symbol["end_line"],
         # --- content boundary wrapping (SEC-MED-2 followup) ---
         "signature": wrap_untrusted_content(symbol.get("signature", "")),
-        "decorators": symbol.get("decorators", []),
+        "decorators": [wrap_untrusted_content(d) for d in symbol.get("decorators", [])],
         "docstring": wrap_untrusted_content(symbol.get("docstring", "")),
         "content_hash": symbol.get("content_hash", ""),
-        "source": wrap_untrusted_content(source) if source else "",
+        "source": wrap_untrusted_content(sanitize_signature_for_api(source)) if source else "",
         "_meta": {
             **make_meta(source="code_index", trusted=False),
             "timing_ms": ms,
@@ -176,10 +176,10 @@ def get_symbols(
             "end_line": symbol["end_line"],
             # --- content boundary wrapping (SEC-MED-2 followup) ---
             "signature": wrap_untrusted_content(symbol.get("signature", "")),
-            "decorators": symbol.get("decorators", []),
+            "decorators": [wrap_untrusted_content(d) for d in symbol.get("decorators", [])],
             "docstring": wrap_untrusted_content(symbol.get("docstring", "")),
             "content_hash": symbol.get("content_hash", ""),
-            "source": wrap_untrusted_content(source) if source else "",
+            "source": wrap_untrusted_content(sanitize_signature_for_api(source)) if source else "",
         })
 
     ms = elapsed_ms(start)

@@ -64,7 +64,9 @@ async def list_tools() -> list[Tool]:
             name="index_repo",
             description=(
                 "Index a GitHub repository's source code. Fetches files, "
-                "parses ASTs, extracts symbols, and saves to local storage."
+                "parses ASTs, extracts symbols, and saves to local storage. "
+                "Full file content (including function bodies) is stored locally at ~/.code-index/; "
+                "secrets embedded in function bodies are redacted from API output but stored at rest."
                 + _INDEX_WARNING
             ),
             inputSchema={
@@ -88,7 +90,9 @@ async def list_tools() -> list[Tool]:
             description=(
                 "Index a local folder containing source code. Walks directory, "
                 "parses ASTs, extracts symbols, and saves to local storage. "
-                "Works with any folder containing supported language files."
+                "Works with any folder containing supported language files. "
+                "Full file content (including function bodies) is stored locally at ~/.code-index/; "
+                "secrets embedded in function bodies are redacted from API output but stored at rest."
                 + _INDEX_WARNING
             ),
             inputSchema={
