@@ -22,14 +22,20 @@ def assert_no_null_bytes(path: str) -> None:
         raise ValidationError("Path contains null byte")
 
 
+# Dot-prefixed directories that are safe for code indexing
+_ALLOWED_DOT_PREFIXES = {".github", ".gitlab", ".circleci", ".husky", ".vscode"}
+
+
 def assert_safe_segments(path: str) -> None:
-    """Step 2: Reject dot-prefixed segments and '..' traversal."""
+    """Step 2: Reject dot-prefixed segments and '..' traversal.
+
+    Allows known-safe dot-prefixed directories (.github, etc.)."""
     for segment in Path(path).parts:
         if segment == ".":
             continue
         if segment == "..":
             raise ValidationError(f"Path contains unsafe segment: {segment}")
-        if segment.startswith("."):
+        if segment.startswith(".") and segment not in _ALLOWED_DOT_PREFIXES:
             raise ValidationError(f"Path contains unsafe segment: {segment}")
 
 

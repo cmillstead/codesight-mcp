@@ -62,12 +62,12 @@ def _make_poisoned_index(
         "git_head": "",
     }
 
-    index_path = Path(tmp) / f"{owner}-{name}.json"
+    index_path = Path(tmp) / f"{owner}__{name}.json"
     with open(index_path, "w", encoding="utf-8") as f:
         json.dump(index_data, f)
 
     # Create the content directory (may or may not contain the poisoned file)
-    content_dir = Path(tmp) / f"{owner}-{name}"
+    content_dir = Path(tmp) / f"{owner}__{name}"
     content_dir.mkdir(parents=True, exist_ok=True)
 
 
@@ -109,7 +109,7 @@ class TestGetSymbolContentTraversal:
 
             _make_poisoned_index(tmp, "owner", "repo", "link/target.py")
 
-            content_dir = Path(tmp) / "owner-repo"
+            content_dir = Path(tmp) / "owner__repo"
             # Create a symlink "link" that points outside the content dir
             symlink_dir = content_dir / "link"
             symlink_dir.symlink_to(str(escape_dir))
@@ -137,7 +137,7 @@ class TestGetSymbolContentByteLengthCap:
             _make_poisoned_index(tmp, "owner", "repo", "test.py", byte_length=huge_len)
 
             # Write a small legitimate file
-            content_dir = Path(tmp) / "owner-repo"
+            content_dir = Path(tmp) / "owner__repo"
             test_file = content_dir / "test.py"
             file_content = "x" * 100
             test_file.write_text(file_content)
@@ -158,7 +158,7 @@ class TestGetSymbolContentByteLengthCap:
                 byte_length=len(content.encode("utf-8")),
             )
 
-            content_dir = Path(tmp) / "owner-repo"
+            content_dir = Path(tmp) / "owner__repo"
             (content_dir / "test.py").write_text(content)
 
             store = IndexStore(base_path=tmp)
@@ -177,7 +177,7 @@ class TestGetSymbolContentAcceptsPreloadedIndex:
             content = "def bar():\n    return 42\n"
 
             # Write content file but no index JSON
-            content_dir = Path(tmp) / "owner-repo"
+            content_dir = Path(tmp) / "owner__repo"
             content_dir.mkdir(parents=True)
             (content_dir / "test.py").write_text(content)
 
@@ -229,7 +229,7 @@ class TestGetSymbolContentAcceptsPreloadedIndex:
                 byte_length=len(content.encode("utf-8")),
             )
 
-            content_dir = Path(tmp) / "owner-repo"
+            content_dir = Path(tmp) / "owner__repo"
             (content_dir / "test.py").write_text(content)
 
             store = IndexStore(base_path=tmp)
@@ -341,7 +341,7 @@ class TestIndexSchemaValidation:
     def test_missing_required_fields_returns_none(self):
         """Index with missing fields must not crash."""
         with tempfile.TemporaryDirectory() as tmp:
-            index_path = Path(tmp) / "bad-index.json"
+            index_path = Path(tmp) / "bad__index.json"
             index_path.write_text('{"repo": "bad/index"}')  # Missing most fields
 
             store = IndexStore(tmp)
@@ -351,7 +351,7 @@ class TestIndexSchemaValidation:
     def test_wrong_types_returns_none(self):
         """Index with wrong field types must not crash."""
         with tempfile.TemporaryDirectory() as tmp:
-            index_path = Path(tmp) / "bad-index.json"
+            index_path = Path(tmp) / "bad__index.json"
             index_path.write_text(json.dumps({
                 "repo": 12345,  # should be string
                 "owner": None,

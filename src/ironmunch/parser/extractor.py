@@ -1,7 +1,36 @@
 """Generic AST symbol extractor using tree-sitter."""
 
 from typing import Optional
-from tree_sitter_language_pack import get_language, get_parser
+from tree_sitter import Language, Parser
+
+# Individual language bindings — only the 7 languages ironmunch supports
+_LANGUAGE_BINDINGS = {}
+
+# Some tree-sitter packages use language_<name>() instead of language()
+_LANGUAGE_FUNC_MAP = {
+    "typescript": ("tree_sitter_typescript", "language_typescript"),
+    "php": ("tree_sitter_php", "language_php"),
+}
+
+def _get_parser(lang_name: str) -> Parser:
+    """Get a tree-sitter parser for a language, loading binding on first use."""
+    if lang_name not in _LANGUAGE_BINDINGS:
+        import importlib
+        if lang_name in _LANGUAGE_FUNC_MAP:
+            mod_name, func_name = _LANGUAGE_FUNC_MAP[lang_name]
+        else:
+            mod_name = f"tree_sitter_{lang_name}"
+            func_name = "language"
+        try:
+            mod = importlib.import_module(mod_name)
+        except ImportError:
+            raise ImportError(
+                f"tree-sitter binding for '{lang_name}' not installed. "
+                f"Install: pip install tree-sitter-{lang_name}"
+            )
+        _LANGUAGE_BINDINGS[lang_name] = Language(getattr(mod, func_name)())
+    parser = Parser(_LANGUAGE_BINDINGS[lang_name])
+    return parser
 
 from .symbols import Symbol, make_symbol_id, compute_content_hash
 from .languages import LanguageSpec, LANGUAGE_REGISTRY
@@ -25,7 +54,7 @@ def parse_file(content: str, filename: str, language: str) -> list[Symbol]:
     source_bytes = content.encode("utf-8")
 
     # Get parser for this language
-    parser = get_parser(spec.ts_language)
+    parser = _get_parser(spec.ts_language)
     tree = parser.parse(source_bytes)
 
     symbols = []

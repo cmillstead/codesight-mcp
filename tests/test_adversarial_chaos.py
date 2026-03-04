@@ -231,10 +231,10 @@ class TestIndexPoisoningDeepDive:
         }
         data.update(overrides)
 
-        idx_path = Path(tmp) / f"{owner}-{name}.json"
+        idx_path = Path(tmp) / f"{owner}__{name}.json"
         idx_path.write_text(json.dumps(data))
 
-        content_dir = Path(tmp) / f"{owner}-{name}"
+        content_dir = Path(tmp) / f"{owner}__{name}"
         content_dir.mkdir(exist_ok=True)
         (content_dir / "main.py").write_text("def func():\n    return 42\n")
 
@@ -262,9 +262,9 @@ class TestIndexPoisoningDeepDive:
         with tempfile.TemporaryDirectory() as tmp:
             self._make_index(tmp, "huge", "repo")
 
-            data = json.loads((Path(tmp) / "huge-repo.json").read_text())
+            data = json.loads((Path(tmp) / "huge__repo.json").read_text())
             data["symbols"][0]["byte_length"] = 2**32
-            (Path(tmp) / "huge-repo.json").write_text(json.dumps(data))
+            (Path(tmp) / "huge__repo.json").write_text(json.dumps(data))
 
             store = IndexStore(tmp)
             result = store.get_symbol_content("huge", "repo", "test::func")
@@ -276,9 +276,9 @@ class TestIndexPoisoningDeepDive:
         with tempfile.TemporaryDirectory() as tmp:
             self._make_index(tmp, "oob", "repo")
 
-            data = json.loads((Path(tmp) / "oob-repo.json").read_text())
+            data = json.loads((Path(tmp) / "oob__repo.json").read_text())
             data["symbols"][0]["byte_offset"] = 999999
-            (Path(tmp) / "oob-repo.json").write_text(json.dumps(data))
+            (Path(tmp) / "oob__repo.json").write_text(json.dumps(data))
 
             store = IndexStore(tmp)
             result = store.get_symbol_content("oob", "repo", "test::func")
@@ -290,7 +290,7 @@ class TestIndexPoisoningDeepDive:
         with tempfile.TemporaryDirectory() as tmp:
             depth = 999
             payload = '{"a":' * depth + '1' + '}' * depth
-            idx_path = Path(tmp) / "bomb-repo.json"
+            idx_path = Path(tmp) / "bomb__repo.json"
             idx_path.write_text(payload)
 
             store = IndexStore(tmp)
@@ -320,7 +320,7 @@ class TestIndexPoisoningDeepDive:
                 "index_version": 2,
                 "file_hashes": {}, "git_head": "",
             }
-            idx_path = Path(tmp) / "bomb-repo.json"
+            idx_path = Path(tmp) / "bomb__repo.json"
             idx_path.write_text(json.dumps(data))
 
             store = IndexStore(tmp)
@@ -336,7 +336,7 @@ class TestIndexPoisoningDeepDive:
     def test_index_json_with_embedded_null(self):
         """Index JSON file with null bytes in content."""
         with tempfile.TemporaryDirectory() as tmp:
-            idx_path = Path(tmp) / "null-repo.json"
+            idx_path = Path(tmp) / "null__repo.json"
             idx_path.write_bytes(
                 b'{"repo": "null/repo", "owner": "null", "name":\x00"repo"}'
             )
@@ -367,7 +367,7 @@ class TestIndexPoisoningDeepDive:
                 }],
                 "index_version": 2, "file_hashes": {}, "git_head": "",
             }
-            idx_path = Path(tmp) / "esc-repo.json"
+            idx_path = Path(tmp) / "esc__repo.json"
             idx_path.write_text(json.dumps(data))
 
             store = IndexStore(tmp)
@@ -560,7 +560,7 @@ class TestStorageLayerAbuse:
         """Content directory is actually a regular file."""
         with tempfile.TemporaryDirectory() as tmp:
             store = IndexStore(tmp)
-            imposter = Path(tmp) / "trick-repo"
+            imposter = Path(tmp) / "trick__repo"
             imposter.write_text("I'm not a directory")
 
             result = store.get_symbol_content("trick", "repo", "nonexistent")
@@ -575,7 +575,7 @@ class TestStorageLayerAbuse:
                 "languages": {}, "symbols": [],
                 "index_version": 999, "file_hashes": {}, "git_head": "",
             }
-            (Path(tmp) / "future-repo.json").write_text(json.dumps(data))
+            (Path(tmp) / "future__repo.json").write_text(json.dumps(data))
 
             store = IndexStore(tmp)
             result = store.load_index("future", "repo")
@@ -585,7 +585,7 @@ class TestStorageLayerAbuse:
         """Index JSON missing required fields."""
         with tempfile.TemporaryDirectory() as tmp:
             data = {"repo": "broken/repo"}
-            (Path(tmp) / "broken-repo.json").write_text(json.dumps(data))
+            (Path(tmp) / "broken__repo.json").write_text(json.dumps(data))
 
             store = IndexStore(tmp)
             try:
@@ -611,7 +611,7 @@ class TestStorageLayerAbuse:
                 }],
                 "index_version": 2, "file_hashes": {}, "git_head": "",
             }
-            (Path(tmp) / "type-repo.json").write_text(json.dumps(data))
+            (Path(tmp) / "type__repo.json").write_text(json.dumps(data))
 
             store = IndexStore(tmp)
             try:
@@ -622,7 +622,7 @@ class TestStorageLayerAbuse:
     def test_index_json_not_json(self):
         """Index file that's not valid JSON."""
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / "corrupt-repo.json").write_text("NOT JSON {{{ !!!!")
+            (Path(tmp) / "corrupt__repo.json").write_text("NOT JSON {{{ !!!!")
             store = IndexStore(tmp)
             try:
                 store.load_index("corrupt", "repo")
@@ -632,7 +632,7 @@ class TestStorageLayerAbuse:
     def test_index_json_is_a_list(self):
         """Index file is valid JSON but a list, not a dict."""
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / "list-repo.json").write_text("[1, 2, 3]")
+            (Path(tmp) / "list__repo.json").write_text("[1, 2, 3]")
             store = IndexStore(tmp)
             try:
                 store.load_index("list", "repo")
@@ -650,10 +650,10 @@ class TestStorageLayerAbuse:
                 canary = Path(sensitive) / "canary.txt"
                 canary.write_text("DO NOT DELETE")
 
-                content_link = Path(tmp) / "evil-repo"
+                content_link = Path(tmp) / "evil__repo"
                 content_link.symlink_to(sensitive)
 
-                (Path(tmp) / "evil-repo.json").write_text("{}")
+                (Path(tmp) / "evil__repo.json").write_text("{}")
 
                 store = IndexStore(tmp)
                 store.delete_index("evil", "repo")
@@ -1236,7 +1236,7 @@ class TestMultiVectorChaos:
     def test_symlink_plus_index_poison_plus_traversal(self):
         """Symlink content dir + poisoned index + path traversal."""
         with tempfile.TemporaryDirectory() as tmp:
-            content_link = Path(tmp) / "evil-repo"
+            content_link = Path(tmp) / "evil__repo"
             with tempfile.TemporaryDirectory() as outside:
                 (Path(outside) / "main.py").write_text("def func(): pass")
                 content_link.symlink_to(outside)
@@ -1257,7 +1257,7 @@ class TestMultiVectorChaos:
                 }],
                 "index_version": 2, "file_hashes": {}, "git_head": "",
             }
-            (Path(tmp) / "evil-repo.json").write_text(json.dumps(data))
+            (Path(tmp) / "evil__repo.json").write_text(json.dumps(data))
 
             store = IndexStore(tmp)
             result = store.get_symbol_content("evil", "repo", "x")

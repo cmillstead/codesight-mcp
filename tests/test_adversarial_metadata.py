@@ -34,7 +34,7 @@ def _create_index_with_symbol(tmp):
     )]
 
     store = IndexStore(tmp)
-    content_dir = Path(tmp) / "test-repo"
+    content_dir = Path(tmp) / "test__repo"
     content_dir.mkdir(parents=True, exist_ok=True)
     src_dir = content_dir / "src"
     src_dir.mkdir()

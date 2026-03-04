@@ -203,7 +203,7 @@ class TestPathTraversalViaPoisonedIndex:
             "git_head": "",
         }
 
-        index_path = Path(tmp) / f"{owner}-{name}.json"
+        index_path = Path(tmp) / f"{owner}__{name}.json"
         index_path.write_text(json.dumps(index_data))
         return index_path
 

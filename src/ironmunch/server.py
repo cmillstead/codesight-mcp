@@ -335,17 +335,24 @@ async def list_tools() -> list[Tool]:
 # Rate limiting — per-tool sliding window
 _CALL_TIMESTAMPS: dict[str, list[float]] = defaultdict(list)
 _MAX_CALLS_PER_MINUTE: int = 60
+_GLOBAL_TIMESTAMPS: list[float] = []
+_MAX_GLOBAL_CALLS_PER_MINUTE: int = 120
 
 
 def _rate_limit(tool_name: str) -> bool:
     """Check if a tool call is within rate limits. Returns True if allowed."""
     now = time.time()
+    # Global limit
+    _GLOBAL_TIMESTAMPS[:] = [t for t in _GLOBAL_TIMESTAMPS if now - t < 60]
+    if len(_GLOBAL_TIMESTAMPS) >= _MAX_GLOBAL_CALLS_PER_MINUTE:
+        return False
+    # Per-tool limit
     timestamps = _CALL_TIMESTAMPS[tool_name]
-    # Prune old entries
     timestamps[:] = [t for t in timestamps if now - t < 60]
     if len(timestamps) >= _MAX_CALLS_PER_MINUTE:
         return False
     timestamps.append(now)
+    _GLOBAL_TIMESTAMPS.append(now)
     return True
 
 
@@ -370,6 +377,14 @@ def _sanitize_arguments(name: str, arguments: dict) -> dict | str:
     for flag in ("follow_symlinks", "use_ai_summaries", "verify"):
         if flag in arguments and not isinstance(arguments[flag], bool):
             arguments[flag] = arguments[flag] in (True, 1)
+
+    # Filter non-string items from list arguments
+    if name == "index_folder" and "extra_ignore_patterns" in arguments:
+        patterns = arguments["extra_ignore_patterns"]
+        if isinstance(patterns, list):
+            arguments["extra_ignore_patterns"] = [
+                p for p in patterns if isinstance(p, str)
+            ]
 
     return arguments
 

@@ -29,6 +29,18 @@ SECRET_PATTERNS = [
     ".npmrc", ".pypirc", ".netrc", ".htpasswd", ".htaccess",
     "wp-config.php", "config.php", "database.yml",
     "shadow", "passwd", "master.key",
+    # Infrastructure secrets
+    "*.tfvars", "terraform.tfstate", "terraform.tfstate.backup",
+    ".dockercfg", "docker-compose*.yml",
+    "kubeconfig", "*.kubeconfig",
+    # SSH-related
+    "known_hosts", "authorized_keys",
+    # Shell/tool history
+    ".bash_history", ".python_history", ".psql_history",
+    # Certificate requests
+    "*.csr",
+    # Encryption/vault
+    ".sops.yaml", "vault.json",
 ]
 
 # --- Binary extensions (ported from jcodemunch) ---
@@ -59,7 +71,11 @@ def validate_file_access(path: str, root: str) -> str:
 
 def safe_read_file(abs_path: str, root: str) -> str:
     """Read a file after validation. Uses errors='replace' for encoding safety."""
-    validate_file_access(abs_path, root)
+    # Direct containment check for absolute paths
+    resolved = str(Path(abs_path).resolve())
+    resolved_root = str(Path(root).resolve())
+    if not resolved.startswith(resolved_root + os.sep):
+        raise ValidationError("Path resolves outside root directory")
 
     size = os.path.getsize(abs_path)
     if size > MAX_FILE_SIZE:

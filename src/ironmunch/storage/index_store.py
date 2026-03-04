@@ -31,6 +31,11 @@ def _get_git_head(repo_path: Path) -> Optional[str]:
             ["git", "rev-parse", "HEAD"],
             cwd=str(repo_path),
             capture_output=True, text=True, timeout=5,
+            env={
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                "HOME": os.environ.get("HOME", ""),
+                "GIT_TERMINAL_PROMPT": "0",
+            },
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -148,18 +153,19 @@ class IndexStore:
             self.base_path = Path.home() / ".code-index"
 
         self.base_path.mkdir(parents=True, exist_ok=True)
+        os.chmod(str(self.base_path), 0o700)
 
     def _index_path(self, owner: str, name: str) -> Path:
         """Path to index JSON file."""
         sanitize_repo_identifier(owner)
         sanitize_repo_identifier(name)
-        return self.base_path / f"{owner}-{name}.json"
+        return self.base_path / f"{owner}__{name}.json"
 
     def _content_dir(self, owner: str, name: str) -> Path:
         """Path to raw content directory."""
         sanitize_repo_identifier(owner)
         sanitize_repo_identifier(name)
-        return self.base_path / f"{owner}-{name}"
+        return self.base_path / f"{owner}__{name}"
 
     def save_index(
         self,
@@ -208,10 +214,15 @@ class IndexStore:
         # Save index JSON atomically: write to temp then rename
         index_path = self._index_path(owner, name)
         tmp_path = index_path.with_suffix(".json.tmp")
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(self._index_to_dict(index), f, indent=2)
-        # Atomic rename (on POSIX; best-effort on Windows)
-        tmp_path.replace(index_path)
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(self._index_to_dict(index), f, indent=2)
+            os.chmod(str(tmp_path), 0o600)
+            # Atomic rename (on POSIX; best-effort on Windows)
+            tmp_path.replace(index_path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
 
         # Save raw files
         content_dir = self._content_dir(owner, name)
@@ -252,6 +263,8 @@ class IndexStore:
         if not isinstance(data["symbols"], list):
             return None
         if not isinstance(data["languages"], dict):
+            return None
+        if not all(isinstance(s, dict) for s in data["symbols"]):
             return None
 
         try:
@@ -312,8 +325,10 @@ class IndexStore:
         # --- security gate: cap byte_length to MAX_FILE_SIZE ---
         byte_length = min(symbol["byte_length"], MAX_FILE_SIZE)
 
+        byte_offset = max(symbol["byte_offset"], 0)
+
         with open(file_path, "rb") as f:
-            f.seek(symbol["byte_offset"])
+            f.seek(byte_offset)
             source_bytes = f.read(byte_length)
 
         return source_bytes.decode("utf-8", errors="replace")
@@ -429,17 +444,25 @@ class IndexStore:
         # Save atomically
         index_path = self._index_path(owner, name)
         tmp_path = index_path.with_suffix(".json.tmp")
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(self._index_to_dict(updated), f, indent=2)
-        tmp_path.replace(index_path)
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(self._index_to_dict(updated), f, indent=2)
+            os.chmod(str(tmp_path), 0o600)
+            tmp_path.replace(index_path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
 
         # Update raw files
         content_dir = self._content_dir(owner, name)
         content_dir.mkdir(parents=True, exist_ok=True)
 
-        # Remove deleted files from content dir
+        # Remove deleted files from content dir (with containment validation)
+        resolved_root = content_dir.resolve()
         for fp in deleted_files:
-            dead = content_dir / fp
+            dead = (content_dir / fp).resolve()
+            if not str(dead).startswith(str(resolved_root) + os.sep):
+                continue  # Traversal — skip silently
             if dead.exists():
                 dead.unlink()
 
@@ -454,6 +477,12 @@ class IndexStore:
         repos = []
 
         for index_file in self.base_path.glob("*.json"):
+            # Size limit check
+            try:
+                if index_file.stat().st_size > MAX_INDEX_SIZE:
+                    continue
+            except OSError:
+                continue
             try:
                 with open(index_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -508,6 +537,7 @@ class IndexStore:
         dest.parent.mkdir(parents=True, exist_ok=True)
         with open(dest, "w", encoding="utf-8") as f:
             f.write(content)
+        os.chmod(str(dest), 0o600)
         return True
 
     def _symbol_to_dict(self, symbol: Symbol) -> dict:

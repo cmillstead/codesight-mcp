@@ -46,6 +46,6 @@ def sanitize_error(err: Exception) -> str:
         return _ERRNO_MESSAGES[err.errno]
 
     # Log full error to stderr for debugging
-    print(f"[ironmunch] Sanitized error: {type(err).__name__}: {err}", file=sys.stderr)
+    print(f"[ironmunch] Sanitized error: {type(err).__name__}", file=sys.stderr)
 
     return GENERIC_FALLBACK

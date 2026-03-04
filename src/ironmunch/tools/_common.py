@@ -31,6 +31,9 @@ def parse_repo(
         matching = [r for r in repos if r["repo"].endswith(f"/{repo}")]
         if not matching:
             return {"error": f"Repository not found: {repo}"}
+        if len(matching) > 1:
+            repos_list = ", ".join(r["repo"] for r in matching)
+            return {"error": f"Ambiguous repo name. Matches: {repos_list}. Use full owner/repo format."}
         owner, name = matching[0]["repo"].split("/", 1)
 
     # Validate identifiers against injection

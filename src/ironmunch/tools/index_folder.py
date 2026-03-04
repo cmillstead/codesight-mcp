@@ -41,11 +41,21 @@ def index_folder(
     # Resolve folder path
     folder_path = Path(path).expanduser().resolve()
 
+    # Directory allowlist check
+    allowed_roots = os.environ.get("IRONMUNCH_ALLOWED_ROOTS")
+    if allowed_roots:
+        allowed = [Path(r.strip()).expanduser().resolve() for r in allowed_roots.split(":")]
+        if not any(
+            str(folder_path).startswith(str(a) + os.sep) or folder_path == a
+            for a in allowed
+        ):
+            return {"success": False, "error": "Folder is outside allowed roots"}
+
     if not folder_path.exists():
-        return {"success": False, "error": f"Folder not found: {path}"}
+        return {"success": False, "error": "Folder not found"}
 
     if not folder_path.is_dir():
-        return {"success": False, "error": f"Path is not a directory: {path}"}
+        return {"success": False, "error": "Path is not a directory"}
 
     warnings: list[str] = []
 
@@ -80,14 +90,14 @@ def index_folder(
             try:
                 content = file_path.read_text(encoding="utf-8", errors="replace")
             except Exception as e:
-                warnings.append(f"Failed to read {file_path}: {e}")
+                warnings.append(f"Failed to read file")
                 continue
 
             # Get relative path for storage
             try:
                 rel_path = file_path.relative_to(folder_path).as_posix()
             except ValueError:
-                warnings.append(f"Could not get relative path for {file_path}")
+                warnings.append("Skipped file: could not resolve relative path")
                 continue
 
             # Determine language from extension
@@ -106,7 +116,7 @@ def index_folder(
                     raw_files[rel_path] = content
                     parsed_files.append(rel_path)
             except Exception as e:
-                warnings.append(f"Failed to parse {rel_path}: {e}")
+                warnings.append(f"Failed to parse {rel_path}")
                 continue
 
         if not all_symbols:

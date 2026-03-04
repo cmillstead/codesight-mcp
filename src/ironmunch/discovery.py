@@ -156,7 +156,7 @@ def discover_local_files(
             if not follow_symlinks and file_path.is_symlink():
                 continue
             if file_path.is_symlink() and _is_symlink_escape(root, file_path):
-                warnings.append(f"Skipped symlink escape: {file_path}")
+                warnings.append(f"Skipped symlink escape: {filename}")
                 continue
 
             # Get relative path for pattern matching
@@ -169,7 +169,7 @@ def discover_local_files(
             try:
                 resolved = file_path.resolve()
                 if not str(resolved).startswith(str(root) + os.sep):
-                    warnings.append(f"Skipped path traversal: {file_path}")
+                    warnings.append(f"Skipped path traversal: {rel_path}")
                     continue
             except (OSError, ValueError):
                 continue
@@ -251,6 +251,14 @@ def parse_github_url(url: str) -> tuple[str, str]:
     # Remove .git suffix
     url = url.removesuffix(".git")
 
+    # Validate URL scheme and hostname for full URLs
+    if "://" in url:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("https", "http"):
+            raise ValueError(f"Only HTTP(S) URLs are supported")
+        if parsed.hostname not in ("github.com", "www.github.com"):
+            raise ValueError("Only GitHub URLs are supported")
+
     # If it contains a / but not ://, treat as owner/repo
     if "/" in url and "://" not in url:
         parts = url.split("/")
@@ -318,6 +326,8 @@ async def fetch_file_content(
     Returns:
         File content as a string.
     """
+    if ".." in path:
+        raise ValueError("File path contains traversal sequence")
     url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
     headers = {"Accept": "application/vnd.github.v3.raw"}
 
