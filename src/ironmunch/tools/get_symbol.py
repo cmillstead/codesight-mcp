@@ -58,7 +58,7 @@ def get_symbol(
 
     # Get source via byte-offset read
     try:
-        source = store.get_symbol_content(owner, name, symbol_id)
+        source = store.get_symbol_content(owner, name, symbol_id, index=index)
     except Exception as exc:
         return {"error": sanitize_error(exc)}
 
@@ -162,7 +162,7 @@ def get_symbols(
             continue
 
         try:
-            source = store.get_symbol_content(owner, name, symbol_id)
+            source = store.get_symbol_content(owner, name, symbol_id, index=index)
         except Exception as exc:
             errors.append({"id": symbol_id, "error": sanitize_error(exc)})
             continue

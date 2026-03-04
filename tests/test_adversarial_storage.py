@@ -1,0 +1,238 @@
+"""Adversarial tests for storage layer: path traversal, byte_length cap, preloaded index.
+
+Tests the three security fixes in get_symbol_content():
+  C-1: arbitrary file read via poisoned index (path traversal)
+  C-2: TOCTOU double-load race (preloaded index param)
+  C-3: no byte_length cap
+"""
+
+import json
+import os
+import tempfile
+from pathlib import Path
+
+import pytest
+
+from ironmunch.storage.index_store import IndexStore, CodeIndex
+from ironmunch.core.limits import MAX_FILE_SIZE
+
+
+def _make_poisoned_index(
+    tmp: str,
+    owner: str,
+    name: str,
+    poison_path: str,
+    byte_length: int = 50,
+) -> None:
+    """Create a minimal index JSON with one symbol pointing at poison_path.
+
+    Also creates the content dir so the store can find it.
+    """
+    index_data = {
+        "repo": f"{owner}/{name}",
+        "owner": owner,
+        "name": name,
+        "indexed_at": "2025-01-01T00:00:00",
+        "source_files": [poison_path],
+        "languages": {"python": 1},
+        "symbols": [
+            {
+                "id": "poisoned::sym",
+                "file": poison_path,
+                "name": "sym",
+                "qualified_name": "sym",
+                "kind": "function",
+                "language": "python",
+                "signature": "def sym():",
+                "docstring": "",
+                "summary": "",
+                "decorators": [],
+                "keywords": [],
+                "parent": None,
+                "line": 1,
+                "end_line": 2,
+                "byte_offset": 0,
+                "byte_length": byte_length,
+                "content_hash": "",
+            }
+        ],
+        "index_version": 2,
+        "file_hashes": {},
+        "git_head": "",
+    }
+
+    index_path = Path(tmp) / f"{owner}-{name}.json"
+    with open(index_path, "w", encoding="utf-8") as f:
+        json.dump(index_data, f)
+
+    # Create the content directory (may or may not contain the poisoned file)
+    content_dir = Path(tmp) / f"{owner}-{name}"
+    content_dir.mkdir(parents=True, exist_ok=True)
+
+
+class TestGetSymbolContentTraversal:
+    """C-1: poisoned index should not allow reading arbitrary files."""
+
+    def test_dotdot_traversal_returns_none(self):
+        """../../etc/passwd path traversal must return None."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_poisoned_index(tmp, "owner", "repo", "../../etc/passwd")
+            store = IndexStore(base_path=tmp)
+            result = store.get_symbol_content("owner", "repo", "poisoned::sym")
+            assert result is None
+
+    def test_absolute_path_returns_none(self):
+        """/etc/passwd absolute path must return None."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_poisoned_index(tmp, "owner", "repo", "/etc/passwd")
+            store = IndexStore(base_path=tmp)
+            result = store.get_symbol_content("owner", "repo", "poisoned::sym")
+            assert result is None
+
+    def test_dotgit_config_returns_none(self):
+        """.git/config (dot-prefixed segment) must return None."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_poisoned_index(tmp, "owner", "repo", ".git/config")
+            store = IndexStore(base_path=tmp)
+            result = store.get_symbol_content("owner", "repo", "poisoned::sym")
+            assert result is None
+
+    def test_symlink_escape_returns_none(self):
+        """Symlink pointing outside content dir must return None."""
+        with tempfile.TemporaryDirectory() as tmp:
+            # Create an "escape" directory outside the content dir
+            escape_dir = Path(tmp) / "escape"
+            escape_dir.mkdir()
+            target = escape_dir / "target.py"
+            target.write_text("SECRET = 'leaked'")
+
+            _make_poisoned_index(tmp, "owner", "repo", "link/target.py")
+
+            content_dir = Path(tmp) / "owner-repo"
+            # Create a symlink "link" that points outside the content dir
+            symlink_dir = content_dir / "link"
+            symlink_dir.symlink_to(str(escape_dir))
+
+            store = IndexStore(base_path=tmp)
+            result = store.get_symbol_content("owner", "repo", "poisoned::sym")
+            assert result is None
+
+    def test_null_byte_injection_returns_none(self):
+        """Path with null byte must return None."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_poisoned_index(tmp, "owner", "repo", "safe.py\x00../../etc/passwd")
+            store = IndexStore(base_path=tmp)
+            result = store.get_symbol_content("owner", "repo", "poisoned::sym")
+            assert result is None
+
+
+class TestGetSymbolContentByteLengthCap:
+    """C-3: byte_length from untrusted index must be capped to MAX_FILE_SIZE."""
+
+    def test_huge_byte_length_is_capped(self):
+        """byte_length=2_147_483_647 should be capped to MAX_FILE_SIZE."""
+        with tempfile.TemporaryDirectory() as tmp:
+            huge_len = 2_147_483_647
+            _make_poisoned_index(tmp, "owner", "repo", "test.py", byte_length=huge_len)
+
+            # Write a small legitimate file
+            content_dir = Path(tmp) / "owner-repo"
+            test_file = content_dir / "test.py"
+            file_content = "x" * 100
+            test_file.write_text(file_content)
+
+            store = IndexStore(base_path=tmp)
+            result = store.get_symbol_content("owner", "repo", "poisoned::sym")
+
+            # Result should exist (file is legitimate) but be at most MAX_FILE_SIZE bytes
+            assert result is not None
+            assert len(result.encode("utf-8")) <= MAX_FILE_SIZE
+
+    def test_normal_byte_length_unchanged(self):
+        """A normal byte_length within limits should read correctly."""
+        with tempfile.TemporaryDirectory() as tmp:
+            content = "def foo():\n    pass\n"
+            _make_poisoned_index(
+                tmp, "owner", "repo", "test.py",
+                byte_length=len(content.encode("utf-8")),
+            )
+
+            content_dir = Path(tmp) / "owner-repo"
+            (content_dir / "test.py").write_text(content)
+
+            store = IndexStore(base_path=tmp)
+            result = store.get_symbol_content("owner", "repo", "poisoned::sym")
+
+            assert result is not None
+            assert result == content
+
+
+class TestGetSymbolContentAcceptsPreloadedIndex:
+    """C-2: passing index= avoids TOCTOU double-load."""
+
+    def test_preloaded_index_is_used(self):
+        """When index= is passed, the store should not re-load from disk."""
+        with tempfile.TemporaryDirectory() as tmp:
+            content = "def bar():\n    return 42\n"
+
+            # Write content file but no index JSON
+            content_dir = Path(tmp) / "owner-repo"
+            content_dir.mkdir(parents=True)
+            (content_dir / "test.py").write_text(content)
+
+            # Build a CodeIndex in memory
+            index = CodeIndex(
+                repo="owner/repo",
+                owner="owner",
+                name="repo",
+                indexed_at="2025-01-01T00:00:00",
+                source_files=["test.py"],
+                languages={"python": 1},
+                symbols=[
+                    {
+                        "id": "test::bar",
+                        "file": "test.py",
+                        "name": "bar",
+                        "qualified_name": "bar",
+                        "kind": "function",
+                        "language": "python",
+                        "signature": "def bar():",
+                        "docstring": "",
+                        "summary": "",
+                        "decorators": [],
+                        "keywords": [],
+                        "parent": None,
+                        "line": 1,
+                        "end_line": 2,
+                        "byte_offset": 0,
+                        "byte_length": len(content.encode("utf-8")),
+                        "content_hash": "",
+                    }
+                ],
+            )
+
+            store = IndexStore(base_path=tmp)
+            # No index JSON on disk, but passing index= should work
+            result = store.get_symbol_content(
+                "owner", "repo", "test::bar", index=index
+            )
+            assert result is not None
+            assert "def bar():" in result
+
+    def test_preloaded_index_none_falls_back_to_load(self):
+        """When index=None, it should load from disk (backward compat)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            content = "def baz(): pass\n"
+            _make_poisoned_index(
+                tmp, "owner", "repo", "test.py",
+                byte_length=len(content.encode("utf-8")),
+            )
+
+            content_dir = Path(tmp) / "owner-repo"
+            (content_dir / "test.py").write_text(content)
+
+            store = IndexStore(base_path=tmp)
+            # index=None (default) should load from disk
+            result = store.get_symbol_content("owner", "repo", "poisoned::sym")
+            assert result is not None
+            assert "def baz():" in result

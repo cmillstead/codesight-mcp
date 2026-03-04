@@ -12,7 +12,8 @@ from typing import Optional
 
 from ..parser.symbols import Symbol
 from ..security import sanitize_repo_identifier
-from ..core.limits import MAX_INDEX_SIZE
+from ..core.limits import MAX_INDEX_SIZE, MAX_FILE_SIZE
+from ..core.validation import validate_path, ValidationError
 
 # Bump this when the index schema changes in an incompatible way.
 INDEX_VERSION = 2
@@ -257,12 +258,26 @@ class IndexStore:
             git_head=data.get("git_head", ""),
         )
 
-    def get_symbol_content(self, owner: str, name: str, symbol_id: str) -> Optional[str]:
+    def get_symbol_content(
+        self,
+        owner: str,
+        name: str,
+        symbol_id: str,
+        index: Optional["CodeIndex"] = None,
+    ) -> Optional[str]:
         """Read symbol source using stored byte offsets.
 
         This is O(1) - no re-parsing, just seek + read.
+
+        Args:
+            owner: Repository owner.
+            name: Repository name.
+            symbol_id: Symbol ID to retrieve.
+            index: Pre-loaded CodeIndex to avoid TOCTOU double-load.
+                   If None, loads from disk (backward compat).
         """
-        index = self.load_index(owner, name)
+        if index is None:
+            index = self.load_index(owner, name)
         if not index:
             return None
 
@@ -270,14 +285,24 @@ class IndexStore:
         if not symbol:
             return None
 
-        file_path = self._content_dir(owner, name) / symbol["file"]
+        # --- security gate: validate symbol["file"] against content dir ---
+        content_dir = self._content_dir(owner, name)
+        try:
+            validated_path = validate_path(symbol["file"], str(content_dir))
+        except ValidationError:
+            return None
+
+        file_path = Path(validated_path)
 
         if not file_path.exists():
             return None
 
+        # --- security gate: cap byte_length to MAX_FILE_SIZE ---
+        byte_length = min(symbol["byte_length"], MAX_FILE_SIZE)
+
         with open(file_path, "rb") as f:
             f.seek(symbol["byte_offset"])
-            source_bytes = f.read(symbol["byte_length"])
+            source_bytes = f.read(byte_length)
 
         return source_bytes.decode("utf-8", errors="replace")
 
