@@ -23,7 +23,6 @@ from ironmunch.core.validation import (
 )
 from ironmunch.core.errors import sanitize_error, strip_system_paths, GENERIC_FALLBACK
 from ironmunch.core.boundaries import make_meta, wrap_untrusted_content
-from ironmunch.core.roots import init_storage_root
 from ironmunch.core.limits import (
     MAX_DIRECTORY_DEPTH,
     MAX_FILE_COUNT,
@@ -1186,36 +1185,6 @@ class TestPromptInjectionPayloads:
 # ===========================================================================
 # 13. Roots Module Edge Cases
 # ===========================================================================
-
-
-class TestRootsEdgeCases:
-    """Edge cases in immutable root path management."""
-
-    def test_init_with_file_not_dir(self):
-        """init_storage_root with a file, not a directory."""
-        with tempfile.TemporaryDirectory() as tmp:
-            f = Path(tmp) / "not_a_dir.txt"
-            f.write_text("oops")
-
-            with pytest.raises(ValueError, match="not a directory"):
-                init_storage_root(str(f))
-
-    def test_init_with_nonexistent_path(self):
-        """init_storage_root with non-existent path."""
-        with pytest.raises(ValueError, match="does not exist"):
-            init_storage_root("/nonexistent/path/that/does/not/exist")
-
-    def test_init_with_symlinked_directory(self):
-        """init_storage_root resolves symlinks to canonical path."""
-        with tempfile.TemporaryDirectory() as tmp:
-            real_dir = Path(tmp) / "real"
-            real_dir.mkdir()
-            link = Path(tmp) / "link"
-            link.symlink_to(real_dir)
-
-            result = init_storage_root(str(link))
-            assert "link" not in result
-            assert str(real_dir.resolve()) == result
 
 
 # ===========================================================================

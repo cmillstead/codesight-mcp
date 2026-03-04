@@ -9,7 +9,6 @@ from .validation import (
     assert_inside_root,
     assert_no_symlinked_parents,
 )
-from .roots import init_storage_root, get_storage_root, RootNotInitializedError
 from .errors import sanitize_error, strip_system_paths
 from .boundaries import wrap_untrusted_content, make_meta
 from .limits import (

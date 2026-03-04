@@ -413,10 +413,6 @@ class TestStaleTempCleanup:
             assert normal.exists(), "Normal .json file was incorrectly removed"
 
 
-import ironmunch.core.roots as roots_mod
-from ironmunch.core.roots import init_storage_root, get_storage_root, RootNotInitializedError
-
-
 class TestIndexSchemaValidation:
     """M-1: Malformed index JSON must be handled gracefully."""
 
@@ -448,22 +444,6 @@ class TestIndexSchemaValidation:
             store = IndexStore(tmp)
             result = store.load_index("bad", "index")
             assert result is None
-
-
-class TestImmutableRoot:
-    """M-8: init_storage_root must only be callable once."""
-
-    def test_double_init_raises(self):
-        """Second call to init_storage_root must raise."""
-        old = roots_mod._storage_root
-        roots_mod._storage_root = None
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
-                init_storage_root(tmp)
-                with pytest.raises(RuntimeError, match="already initialized"):
-                    init_storage_root(tmp)
-        finally:
-            roots_mod._storage_root = old
 
 
 class TestListReposValidation:
