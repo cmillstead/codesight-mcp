@@ -405,10 +405,10 @@ def _sanitize_arguments(name: str, arguments: dict) -> dict | str:
 
     # Validate and coerce integer parameters
     _INT_PARAMS = {
-        "context_lines": (0, 0, MAX_CONTEXT_LINES),   # (default, min, max)
-        "max_results": (10, 1, MAX_SEARCH_RESULTS),
+        "context_lines": (0, MAX_CONTEXT_LINES),
+        "max_results": (1, MAX_SEARCH_RESULTS),
     }
-    for param, (default, lo, hi) in _INT_PARAMS.items():
+    for param, (lo, hi) in _INT_PARAMS.items():
         if param not in arguments:
             continue
         val = arguments[param]
@@ -416,7 +416,10 @@ def _sanitize_arguments(name: str, arguments: dict) -> dict | str:
             # bool is a subclass of int in Python but semantically wrong here
             return f"Argument '{param}' must be an integer, got boolean"
         if isinstance(val, (int, float)):
-            arguments[param] = max(lo, min(hi, int(val)))
+            try:
+                arguments[param] = max(lo, min(hi, int(val)))
+            except (ValueError, OverflowError):
+                return f"Argument '{param}' must be a finite integer, got {val!r}"
         elif isinstance(val, str):
             try:
                 arguments[param] = max(lo, min(hi, int(val)))
