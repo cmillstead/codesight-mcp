@@ -132,7 +132,8 @@ class BatchSummarizer:
         ]
 
         for i, sym in enumerate(symbols, 1):
-            lines.append(f"{i}. {sym.kind}: {sym.signature}")
+            safe_sig = sym.signature.replace("\n", " ").replace("\r", " ")[:200]
+            lines.append(f"  [{i}] {sym.kind}: {safe_sig}")
 
         lines.extend([
             "",

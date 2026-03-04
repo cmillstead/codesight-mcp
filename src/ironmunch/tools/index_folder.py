@@ -140,7 +140,6 @@ def index_folder(
         result: dict = {
             "success": True,
             "repo": f"{owner}/{repo_name}",
-            "folder_path": str(folder_path),
             "indexed_at": store.load_index(owner, repo_name).indexed_at,
             "file_count": len(parsed_files),
             "symbol_count": len(all_symbols),

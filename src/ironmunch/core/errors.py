@@ -22,7 +22,7 @@ _ERRNO_MESSAGES = {
     errno.ENOTDIR: "Not a directory",
 }
 
-_PATH_PATTERN = re.compile(r"(/[\w./-]+){2,}")
+_PATH_PATTERN = re.compile(r"/[\w./-]{2,}")
 
 GENERIC_FALLBACK = "An internal error occurred"
 
