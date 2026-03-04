@@ -4,7 +4,6 @@ import hashlib
 import json
 import os
 import shutil
-import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -37,27 +36,6 @@ def _makedirs_0o700(path: str) -> None:
     finally:
         os.umask(old_umask)
 
-
-def _get_git_head(repo_path: Path) -> Optional[str]:
-    """Get current HEAD commit hash for a git repo, or None."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=str(repo_path),
-            capture_output=True, text=True, timeout=5,
-            env={
-                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                "HOME": os.environ.get("HOME", ""),
-                "GIT_TERMINAL_PROMPT": "0",
-                "GIT_CONFIG_NOSYSTEM": "1",
-                "GIT_CONFIG_GLOBAL": "/dev/null",
-            },
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except Exception:
-        pass
-    return None
 
 
 @dataclass
