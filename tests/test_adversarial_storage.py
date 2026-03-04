@@ -4,6 +4,7 @@ Tests the three security fixes in get_symbol_content():
   C-1: arbitrary file read via poisoned index (path traversal)
   C-2: TOCTOU double-load race (preloaded index param)
   C-3: no byte_length cap
+  C-4: arbitrary file write via traversal in raw_files paths
 """
 
 import json
@@ -236,3 +237,95 @@ class TestGetSymbolContentAcceptsPreloadedIndex:
             result = store.get_symbol_content("owner", "repo", "poisoned::sym")
             assert result is not None
             assert "def baz():" in result
+
+
+class TestSaveIndexPathTraversal:
+    """C-4: raw_files paths must not write outside content directory."""
+
+    def test_traversal_in_raw_files_blocked(self):
+        """raw_files with '../../evil.py' must not write outside content dir."""
+        with tempfile.TemporaryDirectory() as tmp:
+            from ironmunch.parser.symbols import Symbol
+            traversal_path = "../../evil.py"
+            symbols = [Symbol(
+                id=f"{traversal_path}::main#function",
+                file=traversal_path, name="main", qualified_name="main",
+                kind="function", language="python", signature="def main():",
+                line=1, end_line=2, byte_offset=0, byte_length=17,
+                content_hash="a" * 64,
+            )]
+            store = IndexStore(tmp)
+            store.save_index(
+                owner="test", name="repo",
+                source_files=[traversal_path],
+                symbols=symbols,
+                raw_files={traversal_path: "def main(): pass"},
+                languages={"python": 1},
+            )
+            # The evil file must NOT exist outside the content dir
+            evil_path = (Path(tmp) / ".." / "evil.py").resolve()
+            assert not evil_path.exists(), "Traversal write escaped content dir!"
+
+    def test_absolute_path_in_raw_files_blocked(self):
+        """raw_files with absolute path must not write outside content dir."""
+        with tempfile.TemporaryDirectory() as tmp:
+            from ironmunch.parser.symbols import Symbol
+            abs_path = os.path.join(tempfile.gettempdir(), "ironmunch_evil_test_12345.py")
+            symbols = [Symbol(
+                id=f"{abs_path}::main#function",
+                file=abs_path, name="main", qualified_name="main",
+                kind="function", language="python", signature="def main():",
+                line=1, end_line=2, byte_offset=0, byte_length=17,
+                content_hash="a" * 64,
+            )]
+            store = IndexStore(tmp)
+            store.save_index(
+                owner="test", name="repo",
+                source_files=[abs_path],
+                symbols=symbols,
+                raw_files={abs_path: "def main(): pass"},
+                languages={"python": 1},
+            )
+            assert not Path(abs_path).exists(), "Absolute path write escaped!"
+
+    def test_traversal_in_incremental_save_blocked(self):
+        """incremental_save with traversal path must not write outside content dir."""
+        with tempfile.TemporaryDirectory() as tmp:
+            from ironmunch.parser.symbols import Symbol
+            # First create a valid index to update
+            safe_sym = Symbol(
+                id="safe.py::safe#function",
+                file="safe.py", name="safe", qualified_name="safe",
+                kind="function", language="python", signature="def safe():",
+                line=1, end_line=2, byte_offset=0, byte_length=16,
+                content_hash="b" * 64,
+            )
+            store = IndexStore(tmp)
+            store.save_index(
+                owner="test", name="repo",
+                source_files=["safe.py"],
+                symbols=[safe_sym],
+                raw_files={"safe.py": "def safe(): pass"},
+                languages={"python": 1},
+            )
+
+            # Now do an incremental save with a traversal path
+            traversal_path = "../../evil_incremental.py"
+            evil_sym = Symbol(
+                id=f"{traversal_path}::evil#function",
+                file=traversal_path, name="evil", qualified_name="evil",
+                kind="function", language="python", signature="def evil():",
+                line=1, end_line=2, byte_offset=0, byte_length=17,
+                content_hash="c" * 64,
+            )
+            store.incremental_save(
+                owner="test", name="repo",
+                changed_files=[],
+                new_files=[traversal_path],
+                deleted_files=[],
+                new_symbols=[evil_sym],
+                raw_files={traversal_path: "def evil(): pass"},
+                languages={"python": 1},
+            )
+            evil_path = (Path(tmp) / ".." / "evil_incremental.py").resolve()
+            assert not evil_path.exists(), "Incremental traversal write escaped!"

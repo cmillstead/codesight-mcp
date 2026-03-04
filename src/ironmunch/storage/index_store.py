@@ -218,10 +218,7 @@ class IndexStore:
         content_dir.mkdir(parents=True, exist_ok=True)
 
         for file_path, content in raw_files.items():
-            file_dest = content_dir / file_path
-            file_dest.parent.mkdir(parents=True, exist_ok=True)
-            with open(file_dest, "w", encoding="utf-8") as f:
-                f.write(content)
+            self._safe_write_content(content_dir, file_path, content)
 
         return index
 
@@ -433,10 +430,7 @@ class IndexStore:
 
         # Write changed + new files
         for fp, content in raw_files.items():
-            dest = content_dir / fp
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            with open(dest, "w", encoding="utf-8") as f:
-                f.write(content)
+            self._safe_write_content(content_dir, fp, content)
 
         return updated
 
@@ -482,6 +476,20 @@ class IndexStore:
             deleted = True
 
         return deleted
+
+    def _safe_write_content(self, content_dir: Path, file_path: str, content: str) -> bool:
+        """Write a file to the content directory after validating the path.
+
+        Returns True if written, False if path was rejected.
+        """
+        dest = (content_dir / file_path).resolve()
+        resolved_root = content_dir.resolve()
+        if not str(dest).startswith(str(resolved_root) + os.sep):
+            return False  # Traversal — reject silently
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest, "w", encoding="utf-8") as f:
+            f.write(content)
+        return True
 
     def _symbol_to_dict(self, symbol: Symbol) -> dict:
         """Convert Symbol to dict (without source content)."""
