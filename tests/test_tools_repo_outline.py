@@ -1,4 +1,4 @@
-"""Tests for get_repo_outline (TEST-MED-2)."""
+"""Tests for get_repo_outline (TEST-MED-2) and spotlighting (ADV-HIGH-3)."""
 
 import pytest
 
@@ -75,7 +75,7 @@ def test_unknown_repo(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_root_level_files(tmp_path):
-    """Files not in subdirectories should appear under the '(root)' key in directories."""
+    """Files not in subdirectories should appear under a wrapped '(root)' key."""
     _make_store_with_index(
         tmp_path,
         files=["README.md", "setup.py"],
@@ -86,8 +86,14 @@ def test_root_level_files(tmp_path):
 
     assert "error" not in result
     directories = result["directories"]
-    assert "(root)" in directories, f"Expected '(root)' in directories, got: {list(directories.keys())}"
-    assert directories["(root)"] == 2
+    # All keys are now wrapped — find the one whose unwrapped value is "(root)"
+    root_key = next(
+        (k for k in directories if _unwrap_dir_key(k) == "(root)"), None
+    )
+    assert root_key is not None, (
+        f"Expected wrapped '(root)' key in directories, got: {list(directories.keys())}"
+    )
+    assert directories[root_key] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -106,5 +112,82 @@ def test_subdirectory_grouping(tmp_path):
 
     assert "error" not in result
     directories = result["directories"]
-    assert directories.get("src/") == 2
-    assert directories.get("tests/") == 1
+    # Unwrap keys to find counts
+    unwrapped = {_unwrap_dir_key(k): v for k, v in directories.items()}
+    assert unwrapped.get("src/") == 2
+    assert unwrapped.get("tests/") == 1
+
+
+# ---------------------------------------------------------------------------
+# 5. ADV-HIGH-3: directory keys spotlighted and trusted=False
+# ---------------------------------------------------------------------------
+
+def _unwrap_dir_key(wrapped: str) -> str:
+    """Extract inner content from a wrap_untrusted_content() wrapper."""
+    lines = wrapped.split("\n")
+    return "\n".join(lines[1:-1])
+
+
+class TestGetRepoOutlineSpotlighting:
+    """ADV-HIGH-3: directory keys in get_repo_outline must be spotlighted."""
+
+    def test_directory_keys_are_wrapped(self, tmp_path):
+        """Every key in the 'directories' dict must start with <<<UNTRUSTED_CODE_."""
+        _make_store_with_index(
+            tmp_path,
+            files=["src/main.py", "tests/test_main.py"],
+            languages={"python": 2},
+        )
+        result = get_repo_outline("testowner/testrepo", storage_path=str(tmp_path))
+
+        assert "error" not in result
+        directories = result["directories"]
+        assert len(directories) > 0
+        for key in directories:
+            assert key.startswith("<<<UNTRUSTED_CODE_"), (
+                f"Directory key not wrapped in spotlighting markers: {key!r}"
+            )
+
+    def test_injection_dirname_key_is_wrapped(self, tmp_path):
+        """A top-level directory with an injection-phrase name must be wrapped."""
+        _make_store_with_index(
+            tmp_path,
+            files=["IGNORE_PREVIOUS/evil.py"],
+            languages={"python": 1},
+        )
+        result = get_repo_outline("testowner/testrepo", storage_path=str(tmp_path))
+
+        assert "error" not in result
+        directories = result["directories"]
+        assert len(directories) == 1
+        key = list(directories.keys())[0]
+        assert key.startswith("<<<UNTRUSTED_CODE_"), (
+            f"Injection dirname key not wrapped: {key!r}"
+        )
+        assert _unwrap_dir_key(key) == "IGNORE_PREVIOUS/"
+
+    def test_root_key_is_wrapped(self, tmp_path):
+        """The special '(root)' key must also be wrapped."""
+        _make_store_with_index(
+            tmp_path,
+            files=["README.md"],
+            languages={"python": 0},
+        )
+        result = get_repo_outline("testowner/testrepo", storage_path=str(tmp_path))
+
+        assert "error" not in result
+        directories = result["directories"]
+        for key in directories:
+            assert key.startswith("<<<UNTRUSTED_CODE_"), (
+                f"'(root)' key not wrapped: {key!r}"
+            )
+
+    def test_meta_trusted_is_false(self, tmp_path):
+        """_meta['contentTrust'] must be 'untrusted' for get_repo_outline responses."""
+        _make_store_with_index(tmp_path)
+        result = get_repo_outline("testowner/testrepo", storage_path=str(tmp_path))
+
+        assert "error" not in result
+        assert result["_meta"]["contentTrust"] == "untrusted", (
+            f"Expected contentTrust='untrusted', got: {result['_meta'].get('contentTrust')!r}"
+        )

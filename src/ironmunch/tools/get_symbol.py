@@ -82,8 +82,8 @@ def get_symbol(
                 context_before = "\n".join(all_lines[before_start:start_line])
             if end_line < after_end:
                 context_after = "\n".join(all_lines[end_line:after_end])
-        except (ValidationError, Exception):
-            pass  # Skip context for files with unsafe paths
+        except (ValidationError, OSError, IOError):
+            pass  # Skip context for files with unsafe paths or I/O errors
 
     meta_extra = {}
     if verify and source:

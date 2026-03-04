@@ -4,7 +4,7 @@ import os
 from collections import Counter
 from typing import Optional
 
-from ..core.boundaries import make_meta
+from ..core.boundaries import make_meta, wrap_untrusted_content
 from ..core.errors import sanitize_error, RepoNotFoundError
 from ..storage import IndexStore
 from ._common import parse_repo, timed, elapsed_ms
@@ -62,10 +62,10 @@ def get_repo_outline(
         "file_count": len(index.source_files),
         "symbol_count": len(index.symbols),
         "languages": index.languages,
-        "directories": dict(dir_file_counts.most_common()),
+        "directories": {wrap_untrusted_content(k): v for k, v in dir_file_counts.most_common()},
         "symbol_kinds": dict(kind_counts.most_common()),
         "_meta": {
-            **make_meta(source="index_list", trusted=True),
+            **make_meta(source="index_list", trusted=False),
             "timing_ms": ms,
         },
     }

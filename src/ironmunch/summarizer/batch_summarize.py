@@ -19,16 +19,28 @@ logger = logging.getLogger(__name__)
 # Prevents runaway token usage for adversarially large symbol lists.
 MAX_BATCHES_PER_INDEX = 50
 
-# Injection phrases that, if found at the start of a summary (case-insensitive),
+# Injection phrases that, if found ANYWHERE in a summary (case-insensitive),
 # indicate an attempted prompt injection — replace with empty string.
-_INJECTION_PREFIXES = (
+# ADV-HIGH-4: full substring scan, not prefix-only.
+_INJECTION_PHRASES = (
     "ignore ",
     "system:",
     "[inst]",
     "### ",
     "assistant:",
     "user:",
+    "important:",
 )
+
+
+def _contains_injection_phrase(text: str) -> bool:
+    """Return True if text contains any injection phrase (case-insensitive).
+
+    ADV-HIGH-4 / ADV-MED-4: central helper used by all summary paths so that
+    the full substring scan is consistently applied everywhere.
+    """
+    text_lower = text.lower()
+    return any(phrase in text_lower for phrase in _INJECTION_PHRASES)
 
 
 def extract_summary_from_docstring(docstring: str) -> str:
@@ -49,9 +61,9 @@ def extract_summary_from_docstring(docstring: str) -> str:
 
     result = sanitize_signature_for_api(first_line[:120])
 
-    # Strip injection phrases: if the summary starts with a known injection
-    # prefix, discard it entirely (ADV-MED-10).
-    if any(result.lower().startswith(prefix) for prefix in _INJECTION_PREFIXES):
+    # Strip injection phrases: if the summary contains any known injection
+    # phrase anywhere (case-insensitive), discard it entirely (ADV-HIGH-4).
+    if _contains_injection_phrase(result):
         return ""
 
     return result
@@ -61,20 +73,29 @@ def signature_fallback(symbol: Symbol) -> str:
     """Generate summary from signature when all else fails (Tier 3).
 
     Always produces something, even without API keys.
+    ADV-MED-4: result is filtered through injection phrase check so that a
+    crafted signature containing prompt-injection phrases is not stored as-is.
     """
     kind = symbol.kind
     name = symbol.name
     sig = symbol.signature
 
     if kind == "class":
-        return f"Class {name}"
+        candidate = f"Class {name}"
     elif kind == "constant":
-        return f"Constant {name}"
+        candidate = f"Constant {name}"
     elif kind == "type":
-        return f"Type definition {name}"
+        candidate = f"Type definition {name}"
     else:
         # For functions/methods, include parameter hint
-        return sanitize_signature_for_api(sig[:120]) if sig else f"{kind} {name}"
+        candidate = sanitize_signature_for_api(sig[:120]) if sig else f"{kind} {name}"
+
+    # ADV-MED-4: if the candidate summary contains an injection phrase, fall
+    # back to a safe generic label so the raw injection text is never stored.
+    if _contains_injection_phrase(candidate):
+        return f"{kind} {name}"
+
+    return candidate
 
 
 class BatchSummarizer:
@@ -226,6 +247,17 @@ class BatchSummarizer:
             start_idx = text.index(resp_start) + len(resp_start)
             end_idx = text.index(resp_end)
             parse_text = text[start_idx:end_idx]
+        elif resp_start in text:
+            # ADV-HIGH-5: Start marker present but end marker absent — the response
+            # was truncated (e.g. token budget exhausted).  Extracting partial content
+            # is exploitable: an attacker who causes truncation can make the next
+            # symbol's header appear as part of the previous summary.
+            # Treat as parse failure: return empty summaries for the whole batch.
+            logger.warning(
+                "ADV-HIGH-5: Response start marker present but end marker absent; "
+                "treating as parse failure to prevent partial-content injection"
+            )
+            return [""] * expected_count
         else:
             # Degraded mode: nonce delimiters missing, warn and parse full text
             logger.warning(
@@ -253,8 +285,9 @@ class BatchSummarizer:
                         summary = sanitize_signature_for_api(
                             re.sub(r'[^\x20-\x7e\n]', '', summary).strip()[:200]
                         )
-                        # ADV-LOW-1: strip injection phrases from AI summaries
-                        if any(summary.lower().startswith(p) for p in _INJECTION_PREFIXES):
+                        # ADV-HIGH-4: strip injection phrases from AI summaries —
+                        # full substring scan, not prefix-only.
+                        if _contains_injection_phrase(summary):
                             summary = ""
                         summaries[num - 1] = summary
                 except ValueError:

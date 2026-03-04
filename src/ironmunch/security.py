@@ -67,7 +67,7 @@ BINARY_EXTENSIONS = {
 
 # --- Repo identifier allowlist ---
 
-_REPO_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-.]+$")
+_REPO_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-.]+\Z")
 
 
 def validate_file_access(path: str, root: str) -> str:
@@ -160,8 +160,18 @@ _INLINE_SECRET_RE = re.compile(
 
 
 def sanitize_signature_for_api(signature: str) -> str:
-    """Redact inline secrets from a code signature before sending to external APIs."""
-    return _INLINE_SECRET_RE.sub("<REDACTED>", signature)
+    """Redact inline secrets from a code signature before sending to external APIs.
+
+    Strips DEL (0x7F) and C1 control characters (0x80–0x9F) before applying the
+    inline secret regex. These characters could be injected to break the
+    continuous-ASCII assumption that _INLINE_SECRET_RE patterns rely on (e.g.
+    "sk_live_\\x7f123" would not match without this strip step).
+    """
+    # Strip DEL and C1 controls that could break continuous-ASCII regex matching
+    cleaned = "".join(
+        c for c in signature if not (ord(c) == 127 or 128 <= ord(c) <= 159)
+    )
+    return _INLINE_SECRET_RE.sub("<REDACTED>", cleaned)
 
 
 def sanitize_repo_identifier(identifier: str) -> str:

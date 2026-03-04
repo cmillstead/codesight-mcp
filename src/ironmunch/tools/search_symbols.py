@@ -33,6 +33,24 @@ def search_symbols(
     Returns:
         Dict with search results and _meta envelope.
     """
+    # --- security gate: validate kind and language allowlists ---
+    _VALID_KINDS = {"function", "class", "method", "constant", "type"}
+    _VALID_LANGUAGES = {"python", "javascript", "typescript", "go", "rust", "java"}
+
+    if kind is not None and kind not in _VALID_KINDS:
+        return {
+            "error": f"Invalid kind: {kind!r}. Must be one of: {sorted(_VALID_KINDS)}",
+            "result_count": 0,
+            "results": [],
+        }
+
+    if language is not None and language not in _VALID_LANGUAGES:
+        return {
+            "error": f"Invalid language: {language!r}. Must be one of: {sorted(_VALID_LANGUAGES)}",
+            "result_count": 0,
+            "results": [],
+        }
+
     start = timed()
 
     # --- security gate: parse + validate repo identifier ---

@@ -4,7 +4,7 @@ import os
 from collections import Counter
 from typing import Optional
 
-from ..core.boundaries import make_meta
+from ..core.boundaries import make_meta, wrap_untrusted_content
 from ..core.errors import sanitize_error, RepoNotFoundError
 from ..storage import IndexStore
 from ..parser import LANGUAGE_EXTENSIONS
@@ -68,7 +68,7 @@ def get_file_tree(
         "path_prefix": path_prefix,
         "tree": tree,
         "_meta": {
-            **make_meta(source="index_list", trusted=True),
+            **make_meta(source="index_list", trusted=False),
             "timing_ms": ms,
             "file_count": len(files),
         },
@@ -98,7 +98,7 @@ def _build_tree(files: list[str], index, path_prefix: str) -> list[dict]:
                 lang = LANGUAGE_EXTENSIONS.get(ext, "")
 
                 current[part] = {
-                    "path": file_path,
+                    "path": wrap_untrusted_content(file_path),
                     "type": "file",
                     "language": lang,
                     "symbol_count": symbol_count,
@@ -121,7 +121,7 @@ def _dict_to_list(node_dict: dict) -> list[dict]:
             result.append(node)
         else:
             result.append({
-                "path": name + "/",
+                "path": wrap_untrusted_content(name + "/"),
                 "type": "dir",
                 "children": _dict_to_list(node.get("children", {})),
             })

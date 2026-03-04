@@ -9,8 +9,11 @@ The threat model assumes:
 - The AI will attempt path traversal via tool arguments
 - The AI will attempt path traversal via poisoned index data
 - Source code may contain instructions aimed at the AI (indirect prompt injection)
+- Docstrings or summaries may contain injection phrases targeting the host LLM
 - Error messages may leak filesystem structure
 - Symlinks in indexed directories may point outside the expected root
+- Secrets embedded in source code may be exfiltrated if not redacted
+- Crafted file/directory names may carry injection content through tool responses
 
 ## Defense Matrix
 
@@ -18,19 +21,23 @@ The threat model assumes:
 |--------|---------|
 | Path traversal via tool arguments | 6-step validation chain on every path input |
 | Path traversal via poisoned index | Validate file paths from index at retrieval time, not just at index time |
-| Symlink escape | 3-layer defense: lstat-based filtering during discovery, parent chain walk during validation, `follow_symlinks=False` default |
-| Repository identifier injection | Allowlist pattern (`[a-zA-Z0-9._-]`) with length cap; slashes normalized to `__` |
-| Resource exhaustion | Bounded limits on file size, file count, path length, directory depth, search results, and index size |
-| Information leakage | Error sanitization: ValidationError messages are pre-approved safe strings, known errnos map to safe messages, unknown errors return a generic fallback, system paths are stripped |
-| Indirect prompt injection | Content boundary markers with cryptographic random tokens (Microsoft spotlighting); tool-level untrusted-content warnings in descriptions |
-| Secret exposure | Pattern detection during file discovery: files matching secret patterns (`.env`, `*_key`, `*.pem`, etc.) are excluded from indexing |
+| Symlink escape | 3-layer defense: lstat-based filtering during discovery, parent chain walk during validation, `follow_symlinks=False` default, O_NOFOLLOW on all file opens |
+| Repository identifier injection | Allowlist pattern (`[a-zA-Z0-9._-]`) with `\Z` anchor and length cap; slashes normalized to `__` |
+| Resource exhaustion | Bounded limits on file size, file count, path length, directory depth, search results, index size, batch count, and gitignore patterns |
+| Information leakage | Error sanitization: ValidationError messages are pre-approved safe strings, known errnos map to safe messages, unknown errors return a generic fallback, system paths stripped, parse failure warnings aggregate counts (not paths) |
+| Indirect prompt injection | Content boundary markers with cryptographic random tokens (Microsoft spotlighting) on all untrusted fields; injection phrase detection in summaries; tool descriptions carry explicit warnings |
+| Secret exposure in index | Pattern detection at index time: files matching secret patterns excluded; inline secret regex redacts tokens from signatures/docstrings/source |
+| Secret exposure via control chars | assert_no_control_chars rejects bytes 0x01–0x1F, 0x7F (DEL), and 0x80–0x9F (C1) |
 | Binary confusion | Dual-stage detection: extension-based filtering plus null-byte content sniffing |
+| Credential logging | _RedactAuthFilter suppresses httpx log records containing auth headers at all log levels |
+| Supply chain | uv.lock pinned with hashes; CI uses `--frozen --verify-hashes`; GitHub Actions SHA-pinned |
+| Summarizer injection | Injection phrases stripped from summaries (full substring scan, not prefix-only); degraded-mode parse returns empty on missing end marker |
 
 ## Validation Chain
 
 Every file access runs through a 6-step validation chain (`core/validation.py`):
 
-1. **Null byte rejection** -- Reject paths containing `\x00` (path truncation attacks)
+1. **Control character rejection** -- Reject paths containing control bytes (0x01–0x1F, 0x7F, 0x80–0x9F)
 2. **Segment safety** -- Reject `..` traversal and dot-prefixed segments (hidden files)
 3. **Length and depth limits** -- Max 512 characters, max 10 directory levels
 4. **Path resolution** -- `Path.resolve()` to canonical absolute form
@@ -38,6 +45,8 @@ Every file access runs through a 6-step validation chain (`core/validation.py`):
 6. **Symlink parent walk** -- `lstat` every parent directory from file up to root; reject any symlinks
 
 Steps 1-3 run on the raw input (before resolution). Steps 4-6 run on the resolved path. This ordering prevents TOCTOU races where resolution could change what steps 1-3 validated.
+
+All file opens use `O_NOFOLLOW` to prevent symlink races at the OS level.
 
 ## Resource Limits
 
@@ -53,10 +62,12 @@ All limits are defined in `core/limits.py` and enforced server-side:
 | `MAX_SEARCH_RESULTS` | 50 results | Bound search output size |
 | `MAX_INDEX_SIZE` | 50 MB | Cap stored index JSON |
 | `GITHUB_API_TIMEOUT` | 30 seconds | Prevent hanging on GitHub requests |
+| `MAX_BATCHES_PER_INDEX` | 50 | Cap AI summarization rounds per index |
+| `MAX_GITIGNORE_PATTERNS` | 20 patterns × 200 chars | Prevent regex bomb via extra_ignore_patterns |
 
-## Content Boundaries
+## Content Boundaries (Spotlighting)
 
-Source code returned by tools is wrapped in boundary markers with cryptographically random tokens:
+All untrusted fields returned by tools are individually wrapped in boundary markers with cryptographically random tokens:
 
 ```
 <<<UNTRUSTED_CODE_a1b2c3d4e5f6...>>>
@@ -64,56 +75,102 @@ Source code returned by tools is wrapped in boundary markers with cryptographica
 <<<END_UNTRUSTED_CODE_a1b2c3d4e5f6...>>>
 ```
 
-Each response uses a fresh 32-character hex token (128 bits of entropy), making it computationally infeasible for content to forge a matching end marker. This is based on Microsoft's spotlighting research, which reduced successful prompt injection from >50% to <2%.
+Each response uses a fresh 32-character hex token (128 bits of entropy) generated with `secrets.token_hex(16)`. This makes it computationally infeasible for content to forge a matching end marker. This is based on Microsoft's spotlighting research, which reduced successful prompt injection from >50% to <2%.
 
-Tools that return source code also include `_meta` envelopes marking content as untrusted, and their tool descriptions carry explicit warnings.
+Every string field from untrusted sources — including `id`, `name`, `file`, `signature`, `summary`, `docstring`, `decorator`, `query`, `context_before`, and `context_after` — is individually wrapped. Tools that return source code also include `_meta` envelopes marking content as untrusted.
 
-## Security Scan 2026-03-03
+## Injection Phrase Detection
 
-A comprehensive adversarial audit identified and fixed 27 findings:
+Symbol summaries are scanned for injection phrases before storage. Any summary containing phrases like `"ignore"`, `"system:"`, `"IMPORTANT:"`, `"override"`, `"execute"`, and similar is stripped to an empty string. The check uses substring matching (not prefix-only) against the full summary text.
 
-### Critical Fixes
-1. **Path validation in `get_symbol_content()`** — The storage layer now validates every file path from index data before opening, preventing arbitrary file read via poisoned indexes.
-2. **Eliminated double-load TOCTOU** — `get_symbol_content()` accepts a pre-loaded index, preventing race condition where the index file is replaced between two independent loads.
-3. **Byte length cap** — Symbol byte reads capped to `MAX_FILE_SIZE`, preventing memory exhaustion via poisoned index.
-4. **Content write path validation** — `save_index()` and `incremental_save()` validate all file paths before writing, preventing arbitrary file write via traversal in file paths.
+## Secret Detection
 
-### High-Priority Fixes
-5. **Trust marking corrections** — `search_symbols` and `get_file_outline` now correctly mark responses as untrusted (they contain code-derived data).
-6. **Input bounds** — All string arguments capped at 10,000 chars. `get_symbols` capped at 50 IDs. Empty queries rejected. Boolean flags explicitly coerced.
-7. **Filesystem path removed** — `index_folder` no longer returns the absolute folder path.
-8. **ReDoS fix** — Simplified `_PATH_PATTERN` regex in error sanitization to prevent catastrophic backtracking.
-9. **Summarizer hardening** — Symbol signatures sanitized (newlines stripped, length capped) before inclusion in AI prompts.
+### File-level exclusion
 
-### Medium-Priority Fixes
-10. **Depth-limited discovery** — Replaced `rglob` with `os.walk` + depth tracking, stopping at `MAX_DIRECTORY_DEPTH`.
-11. **Symlink-safe walk** — `os.walk(followlinks=False)` when symlinks disabled.
-12. **Pattern limits** — Extra ignore patterns capped at 20 patterns, 200 chars each.
-13. **Index schema validation** — `load_index()` validates required fields and types.
-14. **Immutable root** — `init_storage_root()` raises on second call.
-15. **Rate limiting** — 60 calls per minute per tool.
-16. **Traversal in skip patterns** — `../` added to SKIP_PATTERNS for discovery.
+Files matching `_SECRET_FILE_PATTERNS` (`.env`, `*_key`, `*.pem`, `id_rsa`, etc.) are excluded from indexing entirely.
+
+### Inline redaction
+
+The `sanitize_signature_for_api()` function applies `_INLINE_SECRET_RE` to signatures, docstrings, and source code. Patterns cover:
+
+- API keys: `sk_live_`, `sk_test_`, `sk-`, `xoxb-`, `xoxp-`
+- Bearer tokens, JWT headers (`eyJ`)
+- AWS keys (`AKIA`), GCP keys (`AIza`), HuggingFace (`hf_`), npm (`npm_`), PyPI (`pypi-`)
+- Passwords and credentials in common `key=value` patterns
+
+Matched secrets are replaced with `[REDACTED]`.
+
+## Rate Limiting
+
+All tools are rate-limited at 60 calls per minute per tool and 120 calls per minute globally (in-process). The limits are enforced at the dispatcher level in `server.py` via `_sanitize_arguments()` before any tool logic runs.
+
+## Input Sanitization
+
+`_sanitize_arguments()` in `server.py` enforces:
+
+- String arguments: max 10,000 chars
+- `symbol_ids` list: max 50 entries
+- Empty query strings: rejected
+- Boolean flags: explicitly coerced
+- Integer arguments (`max_results`, `context_lines`, `max_results`): clamped to valid ranges
+- `byte_offset` / `byte_length`: validated as positive int; `ValidationError` raised on violation
+
+## Storage Security
+
+- Index storage root: `~/.code-index/` (or `CODE_INDEX_PATH`)
+- Directory permissions: `0o700` (owner-only access)
+- Index writes use 3-phase atomic write: content files first, then JSON `.tmp`, then rename
+- `O_NOFOLLOW` on all file reads and writes to prevent symlink races
+- `init_storage_root()` is immutable after first call — cannot be redirected mid-session
+- `load_index()` validates schema: required fields, type checks, element-level type checks on symbol arrays
+- `IRONMUNCH_ALLOWED_ROOTS`: colon-separated allowlist; colons within paths are rejected
+
+## Summarizer Security
+
+- Nonces enforced in `_parse_response`: response must begin with `RESP_{nonce}_START` and end with `RESP_{nonce}_END`
+- Missing end marker treated as parse failure (empty result), not degraded success
+- Batch size capped at `MAX_BATCHES_PER_INDEX=50`
+- Signatures sanitized (newlines stripped, length capped) before inclusion in prompts
+- `trust_env=False` on both httpx and Anthropic SDK clients
+
+## Security Scan History
+
+| Scan | Date | Findings | Tests |
+|------|------|----------|-------|
+| Adversarial (initial) | 2026-03-03 | 27 fixed / 4 deferred | +~49 |
+| Deep security | 2026-03-03b | 25 fixed | +15 |
+| Post-fix review | 2026-03-03c | 13 fixed | +10 |
+| Full security review | 2026-03-04 | 16 fixed | +22 |
+| Follow-up | 2026-03-04b | 13 fixed | +26 |
+| Scan-04c | 2026-03-04c | 13 fixed (1 CRIT) | +14 |
+| Scan-04d | 2026-03-04d | 5 MED fixed / 12 LOW deferred | +5 |
+| Scan-04e | 2026-03-04e | 16 fixed | +25 |
+| Adversarial (2nd round) | 2026-03-04 | 30 fixed | +49 |
+| Adversarial (3rd round) | 2026-03-04b | 23 findings (fixes pending) | — |
+| **Total** | | | **579 tests** |
 
 ## Testing
 
-The adversarial security test suite (`tests/test_adversarial.py`) contains 49 tests covering:
+The test suite contains **579 tests** across adversarial, security, integration, and unit categories covering:
 
-- Null byte injection in paths
-- `../` traversal in direct arguments
-- `../` traversal via poisoned index entries
+- Control character and DEL byte injection in paths, repo IDs, and queries
+- `../` traversal in direct arguments and via poisoned index entries
 - Symlink escape (file symlinks, directory symlinks, parent chain symlinks)
 - Unicode normalization attacks
 - Double-encoding attacks
 - Oversized paths and deeply nested paths
-- Repository identifier injection (slashes, dots, shell metacharacters)
+- Repository identifier injection (slashes, dots, shell metacharacters, trailing newlines)
 - Error message sanitization (no path leakage)
-- Content boundary marker integrity
-- Resource limit enforcement
-- Secret file detection
+- Content boundary marker integrity and spotlighting on all untrusted fields
+- Resource limit enforcement (file size, file count, search results, batch count)
+- Secret file detection and inline secret redaction
 - Binary file detection
+- Atomic write and O_NOFOLLOW enforcement
+- Schema validation in load_index
+- Rate limit enforcement
 - Combined attack vectors
 
-All tests use real temporary directories and real filesystem operations. No mocking of security-critical code paths.
+All security-critical tests use real temporary directories and real filesystem operations. No mocking of security-critical code paths.
 
 ## Issues Fixed from jcodemunch-mcp
 
@@ -125,4 +182,4 @@ Four security issues were identified in the original jcodemunch-mcp and addresse
 
 3. **Raw error messages exposed to AI** -- Exceptions were returned as-is, potentially leaking filesystem paths, usernames, and internal structure. ironmunch sanitizes all errors through `sanitize_error()`, which passes through only pre-approved ValidationError messages or known errno mappings.
 
-4. **No content boundary markers** -- Source code was returned as plain text with no indication that it was untrusted. ironmunch wraps all source code in cryptographic boundary markers and includes `_meta` trust envelopes.
+4. **No content boundary markers** -- Source code was returned as plain text with no indication that it was untrusted. ironmunch wraps all source code and metadata fields in cryptographic boundary markers and includes `_meta` trust envelopes.

@@ -497,3 +497,71 @@ class TestRepoIdentifierLengthCap:
         """101 characters just exceeds the limit."""
         with pytest.raises(ValidationError, match="too long"):
             sanitize_repo_identifier("a" * 101)
+
+
+class TestRepoIdentifierTrailingNewline:
+    """ADV-MED-7: trailing newline must be rejected ($ anchor bypass via \\Z fix)."""
+
+    def test_trailing_newline_rejected(self):
+        """'repo\\n' must raise ValidationError — $ matches before \\n, \\Z does not."""
+        with pytest.raises(ValidationError):
+            sanitize_repo_identifier("repo\n")
+
+    def test_embedded_newline_rejected(self):
+        """A newline anywhere in the identifier must raise ValidationError."""
+        with pytest.raises(ValidationError):
+            sanitize_repo_identifier("re\npo")
+
+    def test_trailing_carriage_return_rejected(self):
+        """Trailing \\r must also be rejected."""
+        with pytest.raises(ValidationError):
+            sanitize_repo_identifier("repo\r")
+
+    def test_clean_identifier_still_passes(self):
+        """A plain valid identifier must still pass after the \\Z fix."""
+        assert sanitize_repo_identifier("my-repo") == "my-repo"
+
+
+class TestSanitizeSignatureDELBypass:
+    """ADV-HIGH-7: DEL (0x7F) and C1 bytes must not allow secrets to bypass redaction."""
+
+    def test_del_byte_in_sk_live_still_redacted(self):
+        """sk_live_ with DEL inserted must still be redacted after stripping."""
+        # DEL between prefix and suffix breaks _INLINE_SECRET_RE without the strip step
+        sig = "sk_live_\x7f" + "a" * 23
+        result = sanitize_signature_for_api(sig)
+        # After stripping 0x7F, the token becomes sk_live_ + 23 chars = 32 chars total
+        # _INLINE_SECRET_RE requires sk_live_[a-zA-Z0-9]{24,} so 23 chars is short.
+        # Use 24 chars after DEL to meet the minimum.
+        sig2 = "sk_live_\x7f" + "a" * 24
+        result2 = sanitize_signature_for_api(sig2)
+        assert "<REDACTED>" in result2
+        assert "sk_live_" not in result2
+
+    def test_c1_byte_in_sk_live_still_redacted(self):
+        """sk_live_ with a C1 control inserted must still be redacted."""
+        sig = "sk_live_\x82" + "b" * 24
+        result = sanitize_signature_for_api(sig)
+        assert "<REDACTED>" in result
+        assert "sk_live_" not in result
+
+    def test_del_byte_in_ghp_token_still_redacted(self):
+        """ghp_ token with DEL inserted must still be redacted."""
+        # ghp_ requires exactly 36 alphanum chars after prefix
+        sig = "ghp_\x7f" + "a" * 36
+        result = sanitize_signature_for_api(sig)
+        assert "<REDACTED>" in result
+        assert "ghp_" not in result
+
+    def test_del_byte_in_clean_string_does_not_corrupt(self):
+        """A string with only DEL/C1 chars (no secret) must not produce REDACTED."""
+        sig = "def foo(\x7fbar: str) -> None"
+        result = sanitize_signature_for_api(sig)
+        # No secret present — DEL stripped, no REDACTED inserted
+        assert "<REDACTED>" not in result
+        assert "def foo(" in result
+
+    def test_clean_signature_unaffected(self):
+        """A signature with no DEL/C1 and no secret is returned unchanged."""
+        sig = "def hello(name: str) -> str"
+        assert sanitize_signature_for_api(sig) == sig

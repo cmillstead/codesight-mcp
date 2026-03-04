@@ -92,7 +92,7 @@ def search_text(
         for line_num, line in enumerate(lines, 1):
             if query_lower in line.lower():
                 matches.append({
-                    "file": file_path,
+                    "file": wrap_untrusted_content(file_path),
                     "line": line_num,
                     # --- content boundary wrapping (SEC-LOW-5: scan 250-char window then truncate to 200) ---
                     "text": wrap_untrusted_content(sanitize_signature_for_api(line.rstrip()[:250])[:200]),

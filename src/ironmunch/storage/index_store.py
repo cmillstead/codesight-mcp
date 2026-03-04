@@ -4,6 +4,7 @@ import errno
 import hashlib
 import json
 import os
+import re
 import shutil
 import time
 from dataclasses import dataclass, field
@@ -41,12 +42,18 @@ def _makedirs_0o700(path: str) -> None:
     Python's os.makedirs() mode argument is modified by the process umask for
     intermediate directories. To guarantee 0o700 we temporarily set umask=0o077
     (which means only the owner bits survive from 0o777, giving 0o700).
+
+    ADV-MED-5: os.makedirs(..., exist_ok=True) does NOT chmod pre-existing
+    directories. We call os.chmod() after makedirs to enforce 0o700 on the
+    target path whether it was just created or already existed.
     """
     old_umask = os.umask(0o077)
     try:
         os.makedirs(path, mode=0o700, exist_ok=True)
     finally:
         os.umask(old_umask)
+    # Enforce permissions on the target directory itself (pre-existing or new).
+    os.chmod(path, 0o700)
 
 
 
@@ -305,6 +312,8 @@ class IndexStore:
         for fld in required_fields:
             if fld not in data:
                 return None
+        if not isinstance(data["indexed_at"], str):
+            return None
         if not isinstance(data["source_files"], list):
             return None
         if not isinstance(data["symbols"], list):
@@ -323,6 +332,10 @@ class IndexStore:
 
         # SEC-LOW-5: Re-sanitize symbol text fields on load to catch secrets
         # written before current redaction rules or tampered on disk.
+        # ADV-LOW-6: Validate content_hash format — must be a 64-char lowercase hex
+        # string (SHA-256). Discard malformed hashes to prevent verify=True from
+        # reporting a spurious mismatch against an arbitrary attacker-controlled string.
+        _HASH_RE = re.compile(r"[0-9a-f]{64}")
         for sym in data["symbols"]:
             for field in ("signature", "docstring", "summary"):
                 if field in sym and isinstance(sym[field], str):
@@ -332,6 +345,11 @@ class IndexStore:
                     sanitize_signature_for_api(d) if isinstance(d, str) else d
                     for d in sym["decorators"]
                 ]
+            # ADV-LOW-6: strip malformed content_hash values
+            hash_val = sym.get("content_hash")
+            if hash_val is not None:
+                if not isinstance(hash_val, str) or not _HASH_RE.fullmatch(hash_val):
+                    sym["content_hash"] = ""
 
         try:
             return CodeIndex(

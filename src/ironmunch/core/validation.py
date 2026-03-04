@@ -6,6 +6,7 @@ targeted use.
 """
 
 import os
+import unicodedata
 from pathlib import Path
 
 from .limits import MAX_PATH_LENGTH, MAX_DIRECTORY_DEPTH
@@ -17,8 +18,14 @@ class ValidationError(Exception):
 
 
 def assert_no_control_chars(path: str) -> None:
-    """Step 1: Reject null bytes and other control characters."""
-    if any(ord(c) < 32 for c in path):
+    """Step 1: Reject null bytes, C0 controls, DEL, and C1 controls.
+
+    Rejects:
+    - 0x00–0x1F: C0 control characters (includes null byte, tab, newline, etc.)
+    - 0x7F: DEL — would break fnmatch pattern matching for secret filenames
+    - 0x80–0x9F: C1 control block — can bypass continuous-ASCII regex assumptions
+    """
+    if any(ord(c) < 32 or ord(c) == 127 or 128 <= ord(c) <= 159 for c in path):
         raise ValidationError("Path contains control character")
 
 
@@ -91,13 +98,17 @@ def validate_path(path: str, root: str) -> str:
     Raises ValidationError if any step fails.
 
     Steps:
-        1. assert_no_control_chars — reject \\0 and all control chars (ord < 32)
+        0. NFC normalization — canonical Unicode form before all checks
+        1. assert_no_control_chars — reject C0 (ord < 32), DEL (0x7F), C1 (0x80–0x9F)
         2. assert_safe_segments — reject .., dot-prefixed
         3. assert_path_limits — max 512 chars, 10 depth
         4. Path.resolve() — normalize to absolute
         5. assert_inside_root — strict prefix + os.sep
         6. assert_no_symlinked_parents — lstat walk
     """
+    # Step 0: normalize to NFC so NFD-encoded characters are in canonical form
+    # before any string comparison or pattern matching.
+    path = unicodedata.normalize("NFC", path)
     assert_no_control_chars(path)
     assert_safe_segments(path)
     assert_path_limits(path)

@@ -370,10 +370,14 @@ KNOWN_TOOLS = frozenset({
 })
 
 # Rate limiting — per-tool sliding window
+# TODO(security): ADV-MED-1 — Rate limit state is in-process only and resets on server
+# restart. An attacker who can trigger restarts (e.g., crash-restart loop) gets a
+# fresh window on each restart. Full fix requires a persistent token-bucket backed by
+# an atomic file write or shared-memory counter, which is deferred as out of scope.
 _CALL_TIMESTAMPS: dict[str, list[float]] = defaultdict(list)
 _MAX_CALLS_PER_MINUTE: int = 60
 _GLOBAL_TIMESTAMPS: list[float] = []
-_MAX_GLOBAL_CALLS_PER_MINUTE: int = 120
+_MAX_GLOBAL_CALLS_PER_MINUTE: int = 300
 
 
 def _rate_limit(tool_name: str) -> bool:

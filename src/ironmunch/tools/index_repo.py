@@ -101,6 +101,7 @@ async def index_repo(
         languages: dict[str, int] = {}
         raw_files: dict[str, str] = {}
         parsed_files: list[str] = []
+        parse_fail_count = 0
 
         for path, content in file_contents:
             if not content:
@@ -120,8 +121,11 @@ async def index_repo(
                     raw_files[path] = content
                     parsed_files.append(path)
             except Exception:
-                warnings.append(f"Failed to parse {path}")
+                parse_fail_count += 1
                 continue
+
+        if parse_fail_count > 0:
+            warnings.append(f"{parse_fail_count} file(s) failed to parse")
 
         if not all_symbols:
             return {"success": False, "error": "No symbols extracted"}

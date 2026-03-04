@@ -88,6 +88,7 @@ def index_folder(
         languages: dict[str, int] = {}
         raw_files: dict[str, str] = {}
         parsed_files: list[str] = []
+        parse_fail_count = 0
 
         for file_path in source_files:
             # --- security gate: re-validate path before reading (defense in depth) ---
@@ -135,9 +136,12 @@ def index_folder(
                     languages[language] = languages.get(language, 0) + 1
                     raw_files[rel_path] = content
                     parsed_files.append(rel_path)
-            except Exception as e:
-                warnings.append(f"Failed to parse {rel_path}")
+            except Exception:
+                parse_fail_count += 1
                 continue
+
+        if parse_fail_count > 0:
+            warnings.append(f"{parse_fail_count} file(s) failed to parse")
 
         if not all_symbols:
             return {"success": False, "error": "No symbols extracted from files"}

@@ -48,10 +48,10 @@ MAX_GITIGNORE_PATTERN_LEN = 200
 # so that tokens never appear in application logs.
 class _RedactAuthFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        if record.levelno == logging.DEBUG and record.name.startswith("httpx"):
+        if record.name.startswith("httpx"):
             msg = record.getMessage()
             if "authorization" in msg.lower():
-                return False  # suppress the record
+                return False  # suppress the record regardless of level
         return True
 
 

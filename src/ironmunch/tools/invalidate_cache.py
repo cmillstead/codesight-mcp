@@ -41,6 +41,8 @@ def invalidate_cache(
 
     try:
         store = IndexStore(base_path=storage_path)
+        # TODO(security): TOCTOU race — concurrent index_repo could write between our
+        # existence check and delete. Full fix requires file-level locking.
         deleted = store.delete_index(owner, name)
     except Exception as exc:
         return {"error": sanitize_error(exc)}

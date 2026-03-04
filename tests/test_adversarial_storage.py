@@ -657,3 +657,251 @@ class TestCleanupStaleTempSkipsRecent:
             assert recent.exists(), (
                 "Recent .json.tmp was incorrectly deleted by _cleanup_stale_temps()"
             )
+
+
+class TestMakedirs0o700EnforcesPermissions:
+    """ADV-MED-5: _makedirs_0o700 must enforce 0o700 on pre-existing directories."""
+
+    def test_newly_created_directory_is_0o700(self):
+        """A freshly created directory must have mode 0o700."""
+        with tempfile.TemporaryDirectory() as tmp:
+            target = os.path.join(tmp, "newdir")
+            from ironmunch.storage.index_store import _makedirs_0o700
+            _makedirs_0o700(target)
+            mode = os.stat(target).st_mode & 0o777
+            assert mode == 0o700, f"Expected 0o700, got {oct(mode)}"
+
+    def test_preexisting_permissive_directory_rechmodded_to_0o700(self):
+        """If a directory exists with 0o755, _makedirs_0o700 must chmod it to 0o700."""
+        with tempfile.TemporaryDirectory() as tmp:
+            target = os.path.join(tmp, "existingdir")
+            os.mkdir(target, mode=0o755)
+            # Confirm starting state is permissive
+            assert (os.stat(target).st_mode & 0o777) == 0o755
+
+            from ironmunch.storage.index_store import _makedirs_0o700
+            _makedirs_0o700(target)
+
+            mode = os.stat(target).st_mode & 0o777
+            assert mode == 0o700, (
+                f"Pre-existing 0o755 directory not rechmodded: got {oct(mode)}"
+            )
+
+    def test_index_store_base_path_rechmodded_if_permissive(self):
+        """IndexStore.__init__ must enforce 0o700 on a pre-existing permissive base_path."""
+        with tempfile.TemporaryDirectory() as tmp:
+            base = os.path.join(tmp, "store")
+            os.mkdir(base, mode=0o755)
+            assert (os.stat(base).st_mode & 0o777) == 0o755
+
+            IndexStore(base_path=base)
+
+            mode = os.stat(base).st_mode & 0o777
+            assert mode == 0o700, (
+                f"IndexStore base_path not rechmodded from 0o755: got {oct(mode)}"
+            )
+
+    def test_content_dir_rechmodded_if_permissive(self):
+        """Content directory created during save_index must be 0o700 even if dir pre-existed."""
+        from ironmunch.parser.symbols import Symbol
+        with tempfile.TemporaryDirectory() as tmp:
+            # Pre-create the content dir at 0o755
+            content_dir = os.path.join(tmp, "owner__repo")
+            os.mkdir(content_dir, mode=0o755)
+            assert (os.stat(content_dir).st_mode & 0o777) == 0o755
+
+            store = IndexStore(base_path=tmp)
+            sym = Symbol(
+                id="test.py::foo#function",
+                file="test.py", name="foo", qualified_name="foo",
+                kind="function", language="python", signature="def foo():",
+                line=1, end_line=2, byte_offset=0, byte_length=16,
+                content_hash="a" * 64,
+            )
+            store.save_index(
+                owner="owner", name="repo",
+                source_files=["test.py"],
+                symbols=[sym],
+                raw_files={"test.py": "def foo(): pass\n"},
+                languages={"python": 1},
+            )
+
+            mode = os.stat(content_dir).st_mode & 0o777
+            assert mode == 0o700, (
+                f"Content dir not rechmodded from 0o755: got {oct(mode)}"
+            )
+
+
+class TestIndexedAtTypeValidation:
+    """ADV-LOW-1: indexed_at must be validated as a string in load_index."""
+
+    def _write_index(self, tmp, indexed_at_value):
+        """Write a minimal index JSON with the given indexed_at value."""
+        index_data = {
+            "repo": "owner/repo",
+            "owner": "owner",
+            "name": "repo",
+            "indexed_at": indexed_at_value,
+            "source_files": [],
+            "languages": {},
+            "symbols": [],
+            "index_version": 2,
+            "file_hashes": {},
+            "git_head": "",
+        }
+        index_path = Path(tmp) / "owner__repo.json"
+        with open(index_path, "w", encoding="utf-8") as f:
+            json.dump(index_data, f)
+
+    def test_integer_indexed_at_returns_none(self):
+        """indexed_at=12345 (integer) must cause load_index to return None."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_index(tmp, 12345)
+            store = IndexStore(base_path=tmp)
+            result = store.load_index("owner", "repo")
+            assert result is None, "Expected None for integer indexed_at"
+
+    def test_null_indexed_at_returns_none(self):
+        """indexed_at=null must cause load_index to return None."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_index(tmp, None)
+            store = IndexStore(base_path=tmp)
+            result = store.load_index("owner", "repo")
+            assert result is None, "Expected None for null indexed_at"
+
+    def test_list_indexed_at_returns_none(self):
+        """indexed_at=[] must cause load_index to return None."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_index(tmp, [])
+            store = IndexStore(base_path=tmp)
+            result = store.load_index("owner", "repo")
+            assert result is None, "Expected None for list indexed_at"
+
+    def test_valid_string_indexed_at_loads_successfully(self):
+        """A valid ISO string indexed_at must load without error."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_index(tmp, "2025-01-01T00:00:00")
+            store = IndexStore(base_path=tmp)
+            result = store.load_index("owner", "repo")
+            assert result is not None
+            assert result.indexed_at == "2025-01-01T00:00:00"
+
+
+class TestContentHashValidation:
+    """ADV-LOW-6: content_hash must be validated as a 64-char lowercase hex string."""
+
+    def _write_index_with_hash(self, tmp, content_hash_value):
+        """Write a minimal index JSON with one symbol carrying the given content_hash."""
+        index_data = {
+            "repo": "owner/repo",
+            "owner": "owner",
+            "name": "repo",
+            "indexed_at": "2025-01-01T00:00:00",
+            "source_files": ["test.py"],
+            "languages": {"python": 1},
+            "symbols": [
+                {
+                    "id": "test::sym",
+                    "file": "test.py",
+                    "name": "sym",
+                    "qualified_name": "sym",
+                    "kind": "function",
+                    "language": "python",
+                    "signature": "def sym():",
+                    "docstring": "",
+                    "summary": "",
+                    "decorators": [],
+                    "keywords": [],
+                    "parent": None,
+                    "line": 1,
+                    "end_line": 2,
+                    "byte_offset": 0,
+                    "byte_length": 16,
+                    "content_hash": content_hash_value,
+                }
+            ],
+            "index_version": 2,
+            "file_hashes": {},
+            "git_head": "",
+        }
+        index_path = Path(tmp) / "owner__repo.json"
+        with open(index_path, "w", encoding="utf-8") as f:
+            json.dump(index_data, f)
+
+    def test_malformed_hash_replaced_with_empty_string(self):
+        """A non-hex content_hash is discarded (set to '') on load."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_index_with_hash(tmp, "not-a-hash")
+            store = IndexStore(base_path=tmp)
+            index = store.load_index("owner", "repo")
+            assert index is not None
+            sym = index.get_symbol("test::sym")
+            assert sym is not None
+            assert sym["content_hash"] == "", (
+                f"Expected empty string, got {sym['content_hash']!r}"
+            )
+
+    def test_integer_hash_replaced_with_empty_string(self):
+        """An integer content_hash is discarded (set to '') on load."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_index_with_hash(tmp, 12345)
+            store = IndexStore(base_path=tmp)
+            index = store.load_index("owner", "repo")
+            assert index is not None
+            sym = index.get_symbol("test::sym")
+            assert sym is not None
+            assert sym["content_hash"] == "", (
+                f"Expected empty string for integer hash, got {sym['content_hash']!r}"
+            )
+
+    def test_uppercase_hex_hash_replaced_with_empty_string(self):
+        """An uppercase 64-char hex string fails fullmatch (only lowercase allowed)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_index_with_hash(tmp, "A" * 64)
+            store = IndexStore(base_path=tmp)
+            index = store.load_index("owner", "repo")
+            assert index is not None
+            sym = index.get_symbol("test::sym")
+            assert sym is not None
+            assert sym["content_hash"] == "", (
+                f"Expected empty string for uppercase hash, got {sym['content_hash']!r}"
+            )
+
+    def test_short_hash_replaced_with_empty_string(self):
+        """A 63-char hex string (one short) is discarded."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_index_with_hash(tmp, "a" * 63)
+            store = IndexStore(base_path=tmp)
+            index = store.load_index("owner", "repo")
+            assert index is not None
+            sym = index.get_symbol("test::sym")
+            assert sym is not None
+            assert sym["content_hash"] == "", (
+                f"Expected empty string for 63-char hash, got {sym['content_hash']!r}"
+            )
+
+    def test_valid_sha256_hash_preserved(self):
+        """A valid 64-char lowercase hex SHA-256 hash is preserved unchanged."""
+        valid_hash = "a" * 64
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_index_with_hash(tmp, valid_hash)
+            store = IndexStore(base_path=tmp)
+            index = store.load_index("owner", "repo")
+            assert index is not None
+            sym = index.get_symbol("test::sym")
+            assert sym is not None
+            assert sym["content_hash"] == valid_hash, (
+                f"Valid hash should be preserved, got {sym['content_hash']!r}"
+            )
+
+    def test_empty_string_hash_replaced_with_empty_string(self):
+        """An empty string content_hash is treated as absent/invalid and left as ''."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_index_with_hash(tmp, "")
+            store = IndexStore(base_path=tmp)
+            index = store.load_index("owner", "repo")
+            assert index is not None
+            sym = index.get_symbol("test::sym")
+            assert sym is not None
+            # "" fails fullmatch so it becomes "" (no change but validation still runs)
+            assert sym["content_hash"] == ""
