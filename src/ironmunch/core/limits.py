@@ -21,6 +21,8 @@ MAX_INDEX_SIZE: int = 50 * 1024 * 1024  # 50 MB max index JSON
 # Input validation limits
 MAX_ARGUMENT_LENGTH: int = 10_000  # Max string argument length
 MAX_BATCH_SYMBOLS: int = 50  # Max symbol IDs per get_symbols call
+MAX_IGNORE_PATTERNS: int = 20  # Max extra ignore patterns
+MAX_PATTERN_LENGTH: int = 200  # Max characters per ignore pattern
 
 # Network limits
 GITHUB_API_TIMEOUT: int = 30  # Seconds per GitHub API request

@@ -16,7 +16,7 @@ import httpx
 import pathspec
 
 from .security import is_secret_file, is_binary_file, is_binary_content
-from .core.limits import MAX_FILE_SIZE, MAX_FILE_COUNT, GITHUB_API_TIMEOUT
+from .core.limits import MAX_FILE_SIZE, MAX_FILE_COUNT, MAX_DIRECTORY_DEPTH, GITHUB_API_TIMEOUT
 from .parser.languages import LANGUAGE_EXTENSIONS
 
 
@@ -121,86 +121,103 @@ def discover_local_files(
     # Load .gitignore
     gitignore_spec = _load_gitignore(root)
 
-    # Build extra ignore spec if provided
+    # Build extra ignore spec if provided — with limits
     extra_spec = None
     if extra_ignore_patterns:
+        from .core.limits import MAX_IGNORE_PATTERNS, MAX_PATTERN_LENGTH
+        bounded = [p[:MAX_PATTERN_LENGTH] for p in extra_ignore_patterns[:MAX_IGNORE_PATTERNS]]
         try:
-            extra_spec = pathspec.PathSpec.from_lines("gitignore", extra_ignore_patterns)
+            extra_spec = pathspec.PathSpec.from_lines("gitignore", bounded)
         except Exception:
             pass
 
-    for file_path in root.rglob("*"):
-        # Skip directories
-        if not file_path.is_file():
-            continue
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=follow_symlinks):
+        current = Path(dirpath)
 
-        # Symlink protection
-        if not follow_symlinks and file_path.is_symlink():
-            continue
-        if file_path.is_symlink() and _is_symlink_escape(root, file_path):
-            warnings.append(f"Skipped symlink escape: {file_path}")
-            continue
-
-        # Get relative path for pattern matching
+        # Depth limit — stop descending beyond MAX_DIRECTORY_DEPTH
         try:
-            rel_path = file_path.relative_to(root).as_posix()
+            depth = len(current.relative_to(root).parts)
         except ValueError:
+            dirnames.clear()
+            continue
+        if depth >= MAX_DIRECTORY_DEPTH:
+            dirnames.clear()
             continue
 
-        # Path containment check — resolved file must be under root
-        try:
-            resolved = file_path.resolve()
-            if not str(resolved).startswith(str(root) + os.sep):
-                warnings.append(f"Skipped path traversal: {file_path}")
+        for filename in filenames:
+            file_path = current / filename
+
+            # Skip non-files (shouldn't happen in filenames, but defensive)
+            if not file_path.is_file():
                 continue
-        except (OSError, ValueError):
-            continue
 
-        # Skip patterns
-        if should_skip_file(rel_path):
-            continue
-
-        # .gitignore matching
-        if gitignore_spec and gitignore_spec.match_file(rel_path):
-            continue
-
-        # Extra ignore patterns
-        if extra_spec and extra_spec.match_file(rel_path):
-            continue
-
-        # Secret detection
-        if is_secret_file(rel_path):
-            warnings.append(f"Skipped secret file: {rel_path}")
-            continue
-
-        # Extension filter
-        ext = file_path.suffix
-        if ext not in LANGUAGE_EXTENSIONS:
-            continue
-
-        # Size limit
-        try:
-            if file_path.stat().st_size > max_size:
+            # Symlink protection
+            if not follow_symlinks and file_path.is_symlink():
                 continue
-        except OSError:
-            continue
-
-        # Binary detection (content sniff for files with source extensions)
-        if is_binary_file(rel_path):
-            warnings.append(f"Skipped binary file: {rel_path}")
-            continue
-
-        # Content-level binary sniff (null bytes)
-        try:
-            with open(file_path, "rb") as fh:
-                head = fh.read(8192)
-            if is_binary_content(head):
-                warnings.append(f"Skipped binary content: {rel_path}")
+            if file_path.is_symlink() and _is_symlink_escape(root, file_path):
+                warnings.append(f"Skipped symlink escape: {file_path}")
                 continue
-        except OSError:
-            continue
 
-        files.append(file_path)
+            # Get relative path for pattern matching
+            try:
+                rel_path = file_path.relative_to(root).as_posix()
+            except ValueError:
+                continue
+
+            # Path containment check
+            try:
+                resolved = file_path.resolve()
+                if not str(resolved).startswith(str(root) + os.sep):
+                    warnings.append(f"Skipped path traversal: {file_path}")
+                    continue
+            except (OSError, ValueError):
+                continue
+
+            # Skip patterns
+            if should_skip_file(rel_path):
+                continue
+
+            # .gitignore matching
+            if gitignore_spec and gitignore_spec.match_file(rel_path):
+                continue
+
+            # Extra ignore patterns
+            if extra_spec and extra_spec.match_file(rel_path):
+                continue
+
+            # Secret detection
+            if is_secret_file(rel_path):
+                warnings.append(f"Skipped secret file: {rel_path}")
+                continue
+
+            # Extension filter
+            ext = file_path.suffix
+            if ext not in LANGUAGE_EXTENSIONS:
+                continue
+
+            # Size limit
+            try:
+                if file_path.stat().st_size > max_size:
+                    continue
+            except OSError:
+                continue
+
+            # Binary detection
+            if is_binary_file(rel_path):
+                warnings.append(f"Skipped binary file: {rel_path}")
+                continue
+
+            # Content-level binary sniff
+            try:
+                with open(file_path, "rb") as fh:
+                    head = fh.read(8192)
+                if is_binary_content(head):
+                    warnings.append(f"Skipped binary content: {rel_path}")
+                    continue
+            except OSError:
+                continue
+
+            files.append(file_path)
 
     # File count limit with prioritization
     if len(files) > max_files:
