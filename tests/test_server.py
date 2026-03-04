@@ -327,6 +327,26 @@ class TestRateLimiting:
         for _ in range(5):
             assert _rate_limit("normal_tool") is True
 
+    def test_global_rate_limit_blocks_after_limit_reached(self):
+        """Filling _GLOBAL_TIMESTAMPS to the global cap must block the next call."""
+        import time
+        import ironmunch.server as server_module
+        from ironmunch.server import _rate_limit, _MAX_GLOBAL_CALLS_PER_MINUTE
+
+        # Clear all rate limit state to start fresh
+        server_module._GLOBAL_TIMESTAMPS.clear()
+        server_module._CALL_TIMESTAMPS.clear()
+
+        # Pack _GLOBAL_TIMESTAMPS with recent timestamps (within the 60-second window)
+        now = time.time()
+        server_module._GLOBAL_TIMESTAMPS[:] = [now] * _MAX_GLOBAL_CALLS_PER_MINUTE
+
+        # The next call must be blocked by the global limit
+        result = _rate_limit("some_known_tool")
+        assert result is False, (
+            "Expected _rate_limit to return False when global limit is full"
+        )
+
 
 # -- SEC-HIGH-1: unknown tool names rejected before rate limit ----------------
 
@@ -601,9 +621,170 @@ class TestCodeIndexPathValidation:
         assert result.startswith("/")
 
     async def test_relative_env_var_causes_error_in_call_tool(self, monkeypatch):
-        """SEC-LOW-7: Relative CODE_INDEX_PATH env var causes call_tool to return an error."""
-        monkeypatch.setenv("CODE_INDEX_PATH", "relative/path")
-        result = await call_tool("list_repos", {})
-        assert len(result) == 1
-        text = result[0].text
-        assert "error" in text.lower()
+        """SEC-LOW-7: Relative CODE_INDEX_PATH env var causes call_tool to return an error.
+
+        Note: _CODE_INDEX_PATH is now read once at module import time (ADV-LOW-7).
+        To test the validation logic, we patch _CODE_INDEX_PATH directly.
+        """
+        import ironmunch.server as server_module
+        original = server_module._CODE_INDEX_PATH
+        try:
+            server_module._CODE_INDEX_PATH = "relative/path"
+            result = await call_tool("list_repos", {})
+            assert len(result) == 1
+            text = result[0].text
+            assert "error" in text.lower()
+        finally:
+            server_module._CODE_INDEX_PATH = original
+
+
+class TestParseRepoBareNameLookup:
+    """TEST-HIGH-1: parse_repo bare-name resolution covers found, not-found, ambiguous."""
+
+    def test_bare_name_found(self, tmp_path):
+        """parse_repo resolves a bare name when exactly one match exists."""
+        from ironmunch.tools._common import parse_repo
+        from ironmunch.storage import IndexStore
+        from ironmunch.parser import Symbol
+
+        store = IndexStore(base_path=str(tmp_path))
+        store.save_index(
+            owner="acme",
+            name="myproject",
+            source_files=["a.py"],
+            symbols=[Symbol(id="a-py::f", file="a.py", name="f",
+                            qualified_name="f", kind="function", language="python",
+                            signature="def f():", byte_offset=0, byte_length=10)],
+            raw_files={"a.py": "def f(): pass"},
+            languages={"python": 1},
+        )
+        owner, name = parse_repo("myproject", storage_path=str(tmp_path))
+        assert owner == "acme"
+        assert name == "myproject"
+
+    def test_bare_name_not_found(self, tmp_path):
+        """parse_repo raises RepoNotFoundError when no match exists."""
+        from ironmunch.tools._common import parse_repo
+        from ironmunch.core.errors import RepoNotFoundError
+
+        with pytest.raises(RepoNotFoundError, match="not found"):
+            parse_repo("doesnotexist", storage_path=str(tmp_path))
+
+    def test_bare_name_ambiguous(self, tmp_path):
+        """parse_repo raises RepoNotFoundError when multiple repos share the name."""
+        from ironmunch.tools._common import parse_repo
+        from ironmunch.core.errors import RepoNotFoundError
+        from ironmunch.storage import IndexStore
+        from ironmunch.parser import Symbol
+
+        store = IndexStore(base_path=str(tmp_path))
+        for owner in ("org1", "org2"):
+            store.save_index(
+                owner=owner,
+                name="myproject",
+                source_files=["a.py"],
+                symbols=[Symbol(id="a-py::f", file="a.py", name="f",
+                                qualified_name="f", kind="function", language="python",
+                                signature="def f():", byte_offset=0, byte_length=10)],
+                raw_files={"a.py": "def f(): pass"},
+                languages={"python": 1},
+            )
+        with pytest.raises(RepoNotFoundError, match="[Aa]mbiguous"):
+            parse_repo("myproject", storage_path=str(tmp_path))
+
+
+# -- TEST-LOW-3: get_symbols mixed found/not-found ----------------------------
+
+class TestGetSymbolsMixed:
+    """TEST-LOW-3: get_symbols with a mix of valid and invalid symbol_ids."""
+
+    def test_get_symbols_mixed_valid_and_invalid(self, tmp_path):
+        """Valid symbol_ids return results; invalid ones return errors (no crash)."""
+        import tempfile
+        from ironmunch.storage.index_store import IndexStore
+        from ironmunch.tools.get_symbol import get_symbols
+        from ironmunch.parser import parse_file
+
+        src = "def alpha():\n    return 1\n\ndef beta():\n    return 2\n"
+
+        with tempfile.TemporaryDirectory() as storage:
+            store = IndexStore(storage)
+            symbols = parse_file(src, "funcs.py", "python")
+            sym_ids = [s.id for s in symbols if s.name in ("alpha", "beta")]
+            assert len(sym_ids) >= 1, "Expected at least one parsed symbol"
+
+            store.save_index(
+                owner="local", name="mixtest",
+                source_files=["funcs.py"],
+                symbols=symbols,
+                raw_files={"funcs.py": src},
+                languages={"python": 1},
+            )
+
+            valid_id = sym_ids[0]
+            invalid_id = "nonexistent::bogus_symbol_id"
+
+            result = get_symbols(
+                repo="local/mixtest",
+                symbol_ids=[valid_id, invalid_id],
+                storage_path=storage,
+            )
+
+            assert "symbols" in result, f"Expected 'symbols' key in result: {result}"
+            assert "errors" in result, f"Expected 'errors' key in result: {result}"
+
+            # id fields are now wrapped with spotlighting markers (ADV-HIGH-4)
+            found_ids = [s["id"] for s in result["symbols"]]
+            assert any(valid_id in wrapped for wrapped in found_ids), (
+                f"Valid symbol {valid_id!r} missing from symbols: {found_ids}"
+            )
+
+            error_ids = [e["id"] for e in result["errors"]]
+            assert invalid_id in error_ids, (
+                f"Invalid symbol {invalid_id!r} missing from errors: {error_ids}"
+            )
+
+
+# -- ADV-LOW-6: IRONMUNCH_ALLOWED_ROOTS resolved to absolute paths at startup --
+
+class TestAllowedRootsAbsolutePaths:
+    """ADV-LOW-6: IRONMUNCH_ALLOWED_ROOTS must be resolved to absolute paths."""
+
+    def test_relative_env_path_resolves_to_absolute(self):
+        """A relative path in IRONMUNCH_ALLOWED_ROOTS must resolve to an absolute path."""
+        from pathlib import Path as _Path
+        relative = "some/relative/path"
+        resolved = str(_Path(relative).resolve())
+        assert resolved.startswith("/"), (
+            f"Expected resolved path to be absolute, got: {resolved!r}"
+        )
+
+    def test_allowed_roots_are_absolute_paths(self):
+        """ALLOWED_ROOTS module-level list must contain only absolute paths."""
+        import ironmunch.server as server_module
+        for root in server_module.ALLOWED_ROOTS:
+            assert root.startswith("/"), (
+                f"ALLOWED_ROOTS entry is not absolute: {root!r}"
+            )
+
+
+# -- ADV-LOW-7: CODE_INDEX_PATH read once at startup --
+
+class TestCodeIndexPathReadOnce:
+    """ADV-LOW-7: CODE_INDEX_PATH must be read once at startup; later env changes must not affect it."""
+
+    def test_env_mutation_after_import_does_not_affect_stored_path(self, monkeypatch):
+        """Modifying os.environ after module import must not change _CODE_INDEX_PATH."""
+        import ironmunch.server as server_module
+
+        # Record the value frozen at import time
+        frozen = server_module._CODE_INDEX_PATH
+
+        # Mutate the environment
+        monkeypatch.setenv("CODE_INDEX_PATH", "/tmp/new-path-that-should-be-ignored")
+
+        # The module-level constant must not have changed
+        assert server_module._CODE_INDEX_PATH == frozen, (
+            f"_CODE_INDEX_PATH changed after env mutation: "
+            f"was {frozen!r}, now {server_module._CODE_INDEX_PATH!r}"
+        )

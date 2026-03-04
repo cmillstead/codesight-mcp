@@ -6,19 +6,22 @@ via crafted entries in the index's source_files list.
 """
 
 import fnmatch
-import time
 from pathlib import Path
 from typing import Optional
 
 from ..security import validate_file_access, sanitize_signature_for_api, safe_read_file
 from ..core.limits import MAX_SEARCH_RESULTS
 from ..core.boundaries import wrap_untrusted_content, make_meta
-from ..core.errors import sanitize_error
+from ..core.errors import sanitize_error, RepoNotFoundError
 from ..core.validation import ValidationError
 from ..storage import IndexStore
 from ._common import parse_repo, timed, elapsed_ms
 
 
+# NOTE: search_text performs substring matching over raw file contents,
+# including content not matching the inline secret patterns. A determined
+# caller can binary-search for arbitrary content (~1300 queries per 20-char token).
+# Mitigation: this tool requires an indexed repo; users control what gets indexed.
 def search_text(
     repo: str,
     query: str,
@@ -44,10 +47,10 @@ def search_text(
     start = timed()
 
     # --- security gate: parse + validate repo identifier ---
-    parsed = parse_repo(repo, storage_path)
-    if isinstance(parsed, dict):
-        return parsed
-    owner, name = parsed
+    try:
+        owner, name = parse_repo(repo, storage_path)
+    except RepoNotFoundError as exc:
+        return {"error": str(exc)}
 
     store = IndexStore(base_path=storage_path)
     index = store.load_index(owner, name)

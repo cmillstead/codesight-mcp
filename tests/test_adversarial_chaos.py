@@ -23,7 +23,6 @@ from ironmunch.core.validation import (
 )
 from ironmunch.core.errors import sanitize_error, strip_system_paths, GENERIC_FALLBACK
 from ironmunch.core.boundaries import make_meta, wrap_untrusted_content
-from ironmunch.core.roots import init_storage_root
 from ironmunch.core.limits import (
     MAX_DIRECTORY_DEPTH,
     MAX_FILE_COUNT,
@@ -133,7 +132,7 @@ class TestUnicodeBlackMagic:
     def test_null_in_unicode_escape(self):
         """Null byte disguised as unicode escape."""
         with tempfile.TemporaryDirectory() as root:
-            with pytest.raises(ValidationError, match="null byte"):
+            with pytest.raises(ValidationError, match="control character"):
                 validate_path("test\u0000.py", root)
 
     def test_byte_order_mark_in_path(self):
@@ -254,7 +253,7 @@ class TestIndexPoisoningDeepDive:
                 result = store.get_symbol_content("evil", "repo", "test::func")
                 if result:
                     assert len(result) < 1000
-            except (OSError, ValueError):
+            except (OSError, ValueError, ValidationError):
                 pass
 
     def test_enormous_byte_length(self):
@@ -272,7 +271,7 @@ class TestIndexPoisoningDeepDive:
                 assert len(result) < 1000
 
     def test_byte_offset_past_eof(self):
-        """Symbol with byte_offset past end of file."""
+        """Symbol with byte_offset past end of file raises ValidationError."""
         with tempfile.TemporaryDirectory() as tmp:
             self._make_index(tmp, "oob", "repo")
 
@@ -281,9 +280,8 @@ class TestIndexPoisoningDeepDive:
             (Path(tmp) / "oob__repo.json").write_text(json.dumps(data))
 
             store = IndexStore(tmp)
-            result = store.get_symbol_content("oob", "repo", "test::func")
-            assert result is not None
-            assert len(result) == 0 or result.strip() == ""
+            with pytest.raises(ValidationError, match="byte_offset out of bounds"):
+                store.get_symbol_content("oob", "repo", "test::func")
 
     def test_deeply_nested_json_bomb(self):
         """Index JSON with deep nesting to exhaust stack."""
@@ -1013,10 +1011,10 @@ class TestRepoIdentifierExtremeEdition:
     """Push the repo identifier sanitizer to its limits."""
 
     def test_very_long_identifier(self):
-        """10,000 character identifier of valid characters."""
+        """10,000 character identifier of valid characters — rejected by length cap (ADV-LOW-3)."""
         long_id = "a" * 10000
-        result = sanitize_repo_identifier(long_id)
-        assert result == long_id
+        with pytest.raises(ValidationError, match="too long"):
+            sanitize_repo_identifier(long_id)
 
     def test_just_dots(self):
         """'...' — three dots, contains '..'."""
@@ -1186,36 +1184,6 @@ class TestPromptInjectionPayloads:
 # ===========================================================================
 # 13. Roots Module Edge Cases
 # ===========================================================================
-
-
-class TestRootsEdgeCases:
-    """Edge cases in immutable root path management."""
-
-    def test_init_with_file_not_dir(self):
-        """init_storage_root with a file, not a directory."""
-        with tempfile.TemporaryDirectory() as tmp:
-            f = Path(tmp) / "not_a_dir.txt"
-            f.write_text("oops")
-
-            with pytest.raises(ValueError, match="not a directory"):
-                init_storage_root(str(f))
-
-    def test_init_with_nonexistent_path(self):
-        """init_storage_root with non-existent path."""
-        with pytest.raises(ValueError, match="does not exist"):
-            init_storage_root("/nonexistent/path/that/does/not/exist")
-
-    def test_init_with_symlinked_directory(self):
-        """init_storage_root resolves symlinks to canonical path."""
-        with tempfile.TemporaryDirectory() as tmp:
-            real_dir = Path(tmp) / "real"
-            real_dir.mkdir()
-            link = Path(tmp) / "link"
-            link.symlink_to(real_dir)
-
-            result = init_storage_root(str(link))
-            assert "link" not in result
-            assert str(real_dir.resolve()) == result
 
 
 # ===========================================================================

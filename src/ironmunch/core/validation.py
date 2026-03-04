@@ -16,10 +16,14 @@ class ValidationError(Exception):
     pass
 
 
-def assert_no_null_bytes(path: str) -> None:
-    """Step 1: Reject null bytes (path truncation attacks)."""
-    if "\x00" in path:
-        raise ValidationError("Path contains null byte")
+def assert_no_control_chars(path: str) -> None:
+    """Step 1: Reject null bytes and other control characters."""
+    if any(ord(c) < 32 for c in path):
+        raise ValidationError("Path contains control character")
+
+
+# Backwards-compatible alias — used by existing tests and core/__init__.py exports.
+assert_no_null_bytes = assert_no_control_chars
 
 
 # Dot-prefixed directories that are safe for code indexing
@@ -52,6 +56,16 @@ def assert_path_limits(path: str) -> None:
         )
 
 
+def is_within(root: Path | str, path: Path | str) -> bool:
+    """Return True if *path* is strictly inside *root* (not equal, not a sibling).
+
+    Both arguments must already be resolved absolute paths.
+    Uses an ``os.sep`` guard to prevent prefix-only matches
+    (e.g. ``/foo/bar`` should not match root ``/foo/b``).
+    """
+    return str(path).startswith(str(root) + os.sep)
+
+
 def assert_inside_root(full_path: str, root: str) -> None:
     """Step 5: Strict containment check with os.sep guard."""
     if not full_path.startswith(root + os.sep):
@@ -77,14 +91,14 @@ def validate_path(path: str, root: str) -> str:
     Raises ValidationError if any step fails.
 
     Steps:
-        1. assert_no_null_bytes — reject \\0
+        1. assert_no_control_chars — reject \\0 and all control chars (ord < 32)
         2. assert_safe_segments — reject .., dot-prefixed
         3. assert_path_limits — max 512 chars, 10 depth
         4. Path.resolve() — normalize to absolute
         5. assert_inside_root — strict prefix + os.sep
         6. assert_no_symlinked_parents — lstat walk
     """
-    assert_no_null_bytes(path)
+    assert_no_control_chars(path)
     assert_safe_segments(path)
     assert_path_limits(path)
 

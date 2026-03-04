@@ -78,7 +78,7 @@ class TestPathTraversalViaToolArgs:
         Python's validation must reject the null byte outright.
         """
         with tempfile.TemporaryDirectory() as root:
-            with pytest.raises(ValidationError, match="null byte"):
+            with pytest.raises(ValidationError, match="control character"):
                 validate_path("legit.py\x00../../etc/passwd", root)
 
     def test_backslash_traversal(self):

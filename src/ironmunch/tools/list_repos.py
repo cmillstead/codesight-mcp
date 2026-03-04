@@ -1,9 +1,8 @@
 """List indexed repositories."""
 
-import time
 from typing import Optional
 
-from ..core.boundaries import make_meta
+from ..core.boundaries import make_meta, wrap_untrusted_content
 from ..storage import IndexStore
 from ._common import timed, elapsed_ms
 
@@ -18,6 +17,10 @@ def list_repos(storage_path: Optional[str] = None) -> dict:
     store = IndexStore(base_path=storage_path)
     repos = store.list_repos()
     ms = elapsed_ms(start)
+
+    # Wrap repo names — directory names come from disk and are attacker-influenced
+    for r in repos:
+        r["repo"] = wrap_untrusted_content(r["repo"])
 
     return {
         "count": len(repos),

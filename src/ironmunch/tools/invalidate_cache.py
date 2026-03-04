@@ -2,7 +2,8 @@
 
 from typing import Optional
 
-from ..core.errors import sanitize_error
+from ..core.errors import sanitize_error, RepoNotFoundError
+from ..core.validation import ValidationError
 from ..storage import IndexStore
 from ._common import parse_repo
 
@@ -10,6 +11,7 @@ from ._common import parse_repo
 def invalidate_cache(
     repo: str,
     storage_path: Optional[str] = None,
+    confirm: bool = False,
 ) -> dict:
     """Delete an index and all cached data for a repository.
 
@@ -19,15 +21,23 @@ def invalidate_cache(
     Args:
         repo: Repository identifier (owner/repo or just repo name).
         storage_path: Custom storage path.
+        confirm: Must be True to permanently delete the index. Pass
+            confirm=True to confirm you want to permanently delete this
+            index. If False (the default), the call is rejected with a
+            ValidationError.
 
     Returns:
         Dict with success status.
     """
+    # --- ADV-MED-13: require explicit confirmation before deleting ---
+    if not confirm:
+        raise ValidationError("Pass confirm=True to permanently delete this index")
+
     # --- security gate: parse + validate repo identifier ---
-    parsed = parse_repo(repo, storage_path)
-    if isinstance(parsed, dict):
-        return parsed
-    owner, name = parsed
+    try:
+        owner, name = parse_repo(repo, storage_path)
+    except RepoNotFoundError as exc:
+        return {"error": str(exc)}
 
     try:
         store = IndexStore(base_path=storage_path)

@@ -1,4 +1,10 @@
-"""Generic AST symbol extractor using tree-sitter."""
+"""Generic AST symbol extractor using tree-sitter.
+
+# SECURITY NOTE: tree-sitter grammars run as C extensions in-process.
+# Parsing untrusted source files carries theoretical memory safety risk
+# from vulnerabilities in grammar parser C code. Accepted risk: tree-sitter
+# grammars are well-tested; in-process parsing is required for performance.
+"""
 
 from typing import Optional
 from tree_sitter import Language, Parser
@@ -292,12 +298,12 @@ def _clean_comment_markers(text: str) -> str:
             line = line[3:]
         elif line.startswith("/*"):
             line = line[2:]
+        elif line.startswith("//!"):
+            line = line[3:]
         elif line.startswith("///"):
             line = line[3:]
         elif line.startswith("//"):
             line = line[2:]
-        elif line.startswith("//!"):
-            line = line[3:]
         elif line.startswith("*"):
             line = line[1:]
 

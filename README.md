@@ -29,7 +29,11 @@ Add ironmunch to your MCP client configuration. For Claude Desktop:
 {
   "mcpServers": {
     "ironmunch": {
-      "command": "ironmunch"
+      "command": "ironmunch",
+      "env": {
+        "GITHUB_TOKEN": "ghp_...",
+        "ANTHROPIC_API_KEY": "sk-ant-..."
+      }
     }
   }
 }
