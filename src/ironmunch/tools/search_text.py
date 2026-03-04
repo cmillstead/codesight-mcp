@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from ..security import validate_file_access, sanitize_signature_for_api
+from ..security import validate_file_access, sanitize_signature_for_api, safe_read_file
 from ..core.limits import MAX_SEARCH_RESULTS
 from ..core.boundaries import wrap_untrusted_content, make_meta
 from ..core.errors import sanitize_error
@@ -80,7 +80,7 @@ def search_text(
             continue  # Skip files with unsafe paths
 
         try:
-            content = Path(validated).read_text(encoding="utf-8", errors="replace")
+            content = safe_read_file(validated, str(content_dir))
         except Exception:
             continue
 
@@ -91,8 +91,8 @@ def search_text(
                 matches.append({
                     "file": file_path,
                     "line": line_num,
-                    # --- content boundary wrapping (secret redaction before truncation) ---
-                    "text": wrap_untrusted_content(sanitize_signature_for_api(line.rstrip())[:200]),
+                    # --- content boundary wrapping (SEC-LOW-5: scan 250-char window then truncate to 200) ---
+                    "text": wrap_untrusted_content(sanitize_signature_for_api(line.rstrip()[:250])[:200]),
                 })
                 if len(matches) >= max_results:
                     break

@@ -63,7 +63,11 @@ def _load_gitignore(folder_path: Path) -> Optional[pathspec.PathSpec]:
             if gitignore_path.stat().st_size > 65536:
                 return None  # Too large; skip to prevent DoS
             content = gitignore_path.read_text(encoding="utf-8", errors="replace")
-            return pathspec.PathSpec.from_lines("gitignore", content.splitlines())
+            lines = content.splitlines()
+            # SEC-LOW-3: cap pattern count to prevent pathspec regex DoS
+            if len(lines) > 2000:
+                lines = lines[:2000]
+            return pathspec.PathSpec.from_lines("gitignore", lines)
         except Exception:
             pass
     return None
@@ -120,6 +124,8 @@ def discover_local_files(
     """
     files: list[Path] = []
     warnings: list[str] = []
+    skipped_secret_count = 0
+    skipped_binary_count = 0
     root = folder_path.resolve()
 
     # Load .gitignore
@@ -191,7 +197,7 @@ def discover_local_files(
 
             # Secret detection
             if is_secret_file(rel_path):
-                warnings.append(f"Skipped secret file: {rel_path}")
+                skipped_secret_count += 1
                 continue
 
             # Extension filter
@@ -208,7 +214,7 @@ def discover_local_files(
 
             # Binary detection
             if is_binary_file(rel_path):
-                warnings.append(f"Skipped binary file: {rel_path}")
+                skipped_binary_count += 1
                 continue
 
             # Content-level binary sniff
@@ -216,12 +222,18 @@ def discover_local_files(
                 with open(file_path, "rb") as fh:
                     head = fh.read(8192)
                 if is_binary_content(head):
-                    warnings.append(f"Skipped binary content: {rel_path}")
+                    skipped_binary_count += 1
                     continue
             except OSError:
                 continue
 
             files.append(file_path)
+
+    # Emit aggregate warnings for skipped files (SEC-MED-2: no per-file paths)
+    if skipped_secret_count > 0:
+        warnings.append(f"Skipped {skipped_secret_count} secret file(s)")
+    if skipped_binary_count > 0:
+        warnings.append(f"Skipped {skipped_binary_count} binary file(s)")
 
     # File count limit with prioritization
     if len(files) > max_files:
@@ -391,9 +403,13 @@ def discover_source_files(
         gitignore_content = None  # Too large; skip
     if gitignore_content:
         try:
+            lines = gitignore_content.split("\n")
+            # SEC-LOW-3: cap pattern count to prevent pathspec regex DoS
+            if len(lines) > 2000:
+                lines = lines[:2000]
             gitignore_spec = pathspec.PathSpec.from_lines(
                 "gitignore",
-                gitignore_content.split("\n"),
+                lines,
             )
         except Exception:
             pass

@@ -146,6 +146,10 @@ _INLINE_SECRET_RE = re.compile(
     r"|AKIA[A-Z0-9]{16}"
     r"|xox[bprs]-[a-zA-Z0-9\-]{10,}"
     r"|glpat-[a-zA-Z0-9\-]{20,}"
+    r"|hf_[a-zA-Z0-9]{34,}"
+    r"|npm_[a-zA-Z0-9]{36,}"
+    r"|pypi-[a-zA-Z0-9_\-]{32,}"
+    r"|AIza[a-zA-Z0-9\-_]{35}"
     # Connection strings with embedded credentials
     r"|(?:postgres|mysql|mongodb(?:\+srv)?|redis|amqp)://[^:\s]+:[^@\s]+@"
     # Bearer tokens

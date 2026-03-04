@@ -26,7 +26,7 @@ def extract_summary_from_docstring(docstring: str) -> str:
     if "." in first_line:
         first_line = first_line[:first_line.index(".") + 1]
 
-    return first_line[:120]
+    return sanitize_signature_for_api(first_line[:120])
 
 
 def signature_fallback(symbol: Symbol) -> str:

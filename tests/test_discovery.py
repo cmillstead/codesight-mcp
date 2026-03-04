@@ -269,6 +269,26 @@ class TestDiscoverLocalFiles:
             rel_paths = self._rel_paths(root, files)
             assert "src/secret.py" not in rel_paths
             assert any("secret" in w for w in warnings)
+            # SEC-MED-2: secret filenames must NOT appear in warnings
+            assert not any("secret.py" in w for w in warnings), (
+                "Secret filename leaked in warning: " + repr(warnings)
+            )
+
+    def test_secret_filename_not_disclosed_in_warning(self):
+        """SEC-MED-2: Warnings must not disclose specific secret filenames to AI client."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._make_tree(root, {
+                "src/main.py": "x = 1",
+                "credentials.json": "{}",
+            })
+            files, warnings = discover_local_files(root)
+            # credentials.json must not appear in any warning message
+            assert not any("credentials.json" in w for w in warnings), (
+                "Secret filename leaked in warning: " + repr(warnings)
+            )
+            # But a count-based warning should still be emitted
+            assert any("secret" in w for w in warnings)
 
     def test_skips_node_modules(self):
         with tempfile.TemporaryDirectory() as d:
@@ -339,7 +359,7 @@ class TestDiscoverLocalFiles:
             rel_paths = self._rel_paths(root, files)
             assert "good.py" in rel_paths
             assert "binary.py" not in rel_paths
-            assert any("binary content" in w for w in warnings)
+            assert any("binary" in w for w in warnings)
 
     def test_priority_sorting_when_truncated(self):
         """When max_files truncates, src/ files should be preferred."""
@@ -607,3 +627,14 @@ class TestLoadGitignoreSizeCap:
         """No .gitignore file must return None (existing behavior preserved)."""
         result = _load_gitignore(tmp_path)
         assert result is None
+
+    def test_many_patterns_capped(self, tmp_path):
+        """SEC-LOW-3: .gitignore with >2000 patterns must be capped, not rejected."""
+        gitignore = tmp_path / ".gitignore"
+        # 4000 minimal patterns, well under 65536 bytes (~8000 bytes)
+        gitignore.write_text("\n".join(f"a{i}" for i in range(4000)) + "\n")
+        assert gitignore.stat().st_size < 65536
+
+        result = _load_gitignore(tmp_path)
+        # Must return a spec (not None) — capped to 2000 patterns
+        assert result is not None

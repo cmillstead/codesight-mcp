@@ -1,5 +1,6 @@
 """Index storage with save/load, byte-offset content retrieval, and incremental indexing."""
 
+import errno
 import hashlib
 import json
 import os
@@ -16,6 +17,16 @@ from ..core.validation import validate_path, ValidationError
 
 # Bump this when the index schema changes in an incompatible way.
 INDEX_VERSION = 2
+
+
+def _open_nofollow_text(path: "Path") -> "io.TextIOWrapper":
+    """Open a file for reading with O_NOFOLLOW to prevent symlink attacks.
+
+    Raises OSError with errno.ELOOP if the path is a symlink.
+    """
+    import io
+    fd = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW)
+    return io.open(fd, "r", encoding="utf-8")
 
 
 def _file_hash(content: str) -> str:
@@ -146,8 +157,8 @@ class IndexStore:
         else:
             self.base_path = Path.home() / ".code-index"
 
-        self.base_path.mkdir(parents=True, exist_ok=True)
-        os.chmod(str(self.base_path), 0o700)
+        # SEC-LOW-4: use _makedirs_0o700 to avoid TOCTOU between mkdir and chmod
+        _makedirs_0o700(str(self.base_path))
         self._cleanup_stale_temps()
 
     def _cleanup_stale_temps(self):
@@ -248,7 +259,13 @@ class IndexStore:
         if size > MAX_INDEX_SIZE:
             raise ValueError(f"Index file exceeds maximum size ({size} > {MAX_INDEX_SIZE})")
 
-        with open(index_path, "r", encoding="utf-8") as f:
+        try:
+            f = _open_nofollow_text(index_path)
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                return None  # Symlink — reject
+            raise
+        with f:
             data = json.load(f)
 
         # Version check
@@ -330,7 +347,14 @@ class IndexStore:
 
         byte_offset = max(symbol["byte_offset"], 0)
 
-        with open(file_path, "rb") as f:
+        # SEC-LOW-2: O_NOFOLLOW prevents symlink substitution attacks at read time
+        try:
+            fd = os.open(str(file_path), os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                return None  # Symlink — reject
+            raise
+        with os.fdopen(fd, "rb") as f:
             f.seek(byte_offset)
             source_bytes = f.read(byte_length)
 
@@ -487,7 +511,8 @@ class IndexStore:
             except OSError:
                 continue
             try:
-                with open(index_file, "r", encoding="utf-8") as f:
+                f = _open_nofollow_text(index_file)
+                with f:
                     data = json.load(f)
 
                 # Validate required fields before accessing
