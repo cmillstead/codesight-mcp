@@ -68,6 +68,32 @@ Each response uses a fresh 32-character hex token (128 bits of entropy), making 
 
 Tools that return source code also include `_meta` envelopes marking content as untrusted, and their tool descriptions carry explicit warnings.
 
+## Security Scan 2026-03-03
+
+A comprehensive adversarial audit identified and fixed 27 findings:
+
+### Critical Fixes
+1. **Path validation in `get_symbol_content()`** — The storage layer now validates every file path from index data before opening, preventing arbitrary file read via poisoned indexes.
+2. **Eliminated double-load TOCTOU** — `get_symbol_content()` accepts a pre-loaded index, preventing race condition where the index file is replaced between two independent loads.
+3. **Byte length cap** — Symbol byte reads capped to `MAX_FILE_SIZE`, preventing memory exhaustion via poisoned index.
+4. **Content write path validation** — `save_index()` and `incremental_save()` validate all file paths before writing, preventing arbitrary file write via traversal in file paths.
+
+### High-Priority Fixes
+5. **Trust marking corrections** — `search_symbols` and `get_file_outline` now correctly mark responses as untrusted (they contain code-derived data).
+6. **Input bounds** — All string arguments capped at 10,000 chars. `get_symbols` capped at 50 IDs. Empty queries rejected. Boolean flags explicitly coerced.
+7. **Filesystem path removed** — `index_folder` no longer returns the absolute folder path.
+8. **ReDoS fix** — Simplified `_PATH_PATTERN` regex in error sanitization to prevent catastrophic backtracking.
+9. **Summarizer hardening** — Symbol signatures sanitized (newlines stripped, length capped) before inclusion in AI prompts.
+
+### Medium-Priority Fixes
+10. **Depth-limited discovery** — Replaced `rglob` with `os.walk` + depth tracking, stopping at `MAX_DIRECTORY_DEPTH`.
+11. **Symlink-safe walk** — `os.walk(followlinks=False)` when symlinks disabled.
+12. **Pattern limits** — Extra ignore patterns capped at 20 patterns, 200 chars each.
+13. **Index schema validation** — `load_index()` validates required fields and types.
+14. **Immutable root** — `init_storage_root()` raises on second call.
+15. **Rate limiting** — 60 calls per minute per tool.
+16. **Traversal in skip patterns** — `../` added to SKIP_PATTERNS for discovery.
+
 ## Testing
 
 The adversarial security test suite (`tests/test_adversarial.py`) contains 49 tests covering:
