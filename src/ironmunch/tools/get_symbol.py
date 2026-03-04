@@ -94,10 +94,10 @@ def get_symbol(
     ms = elapsed_ms(start)
 
     result = {
-        "id": symbol["id"],
+        "id": wrap_untrusted_content(symbol["id"]),
         "kind": symbol["kind"],
-        "name": symbol["name"],
-        "file": symbol["file"],
+        "name": wrap_untrusted_content(symbol["name"]),
+        "file": wrap_untrusted_content(symbol["file"]),
         "line": symbol["line"],
         "end_line": symbol["end_line"],
         # --- content boundary wrapping (SEC-MED-2 followup) ---
@@ -167,10 +167,10 @@ def get_symbols(
             continue
 
         symbols.append({
-            "id": symbol["id"],
+            "id": wrap_untrusted_content(symbol["id"]),
             "kind": symbol["kind"],
-            "name": symbol["name"],
-            "file": symbol["file"],
+            "name": wrap_untrusted_content(symbol["name"]),
+            "file": wrap_untrusted_content(symbol["file"]),
             "line": symbol["line"],
             "end_line": symbol["end_line"],
             # --- content boundary wrapping (SEC-MED-2 followup) ---

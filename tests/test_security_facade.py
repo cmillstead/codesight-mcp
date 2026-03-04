@@ -479,3 +479,21 @@ class TestGetSymbolVerify:
             assert result["_meta"]["content_verified"] is False, (
                 f"Expected content_verified=False with corrupt hash, got: {result['_meta']['content_verified']}"
             )
+
+
+class TestRepoIdentifierLengthCap:
+    """ADV-LOW-3: repo identifiers must be rejected when over 100 characters."""
+
+    def test_over_100_chars_rejected(self):
+        """A 301-character string of valid chars must raise ValidationError."""
+        with pytest.raises(ValidationError, match="too long"):
+            sanitize_repo_identifier("a" * 301)
+
+    def test_exactly_100_chars_allowed(self):
+        """100 characters is within the limit and must pass."""
+        assert sanitize_repo_identifier("a" * 100) == "a" * 100
+
+    def test_101_chars_rejected(self):
+        """101 characters just exceeds the limit."""
+        with pytest.raises(ValidationError, match="too long"):
+            sanitize_repo_identifier("a" * 101)

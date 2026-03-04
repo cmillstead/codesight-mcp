@@ -8,6 +8,7 @@ GitHub discovery: fetch tree via API, then filter by extension/pattern/size.
 """
 
 import errno
+import logging
 import os
 from pathlib import Path
 from typing import Optional
@@ -37,6 +38,24 @@ SKIP_PATTERNS = [
 
 # Priority directories for file count truncation
 _PRIORITY_DIRS = ["src/", "lib/", "pkg/", "cmd/", "internal/"]
+
+# ADV-MED-12: maximum length for a single gitignore pattern before it is
+# dropped, to prevent ReDoS via a crafted .gitignore file.
+MAX_GITIGNORE_PATTERN_LEN = 200
+
+
+# ADV-LOW-8: suppress httpx DEBUG records that contain an Authorization header
+# so that tokens never appear in application logs.
+class _RedactAuthFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno == logging.DEBUG and record.name.startswith("httpx"):
+            msg = record.getMessage()
+            if "authorization" in msg.lower():
+                return False  # suppress the record
+        return True
+
+
+logging.getLogger("httpx").addFilter(_RedactAuthFilter())
 
 
 def should_skip_file(path: str) -> bool:
@@ -70,6 +89,8 @@ def _load_gitignore(folder_path: Path) -> Optional[pathspec.PathSpec]:
             # SEC-LOW-3: cap pattern count to prevent pathspec regex DoS
             if len(lines) > 2000:
                 lines = lines[:2000]
+            # ADV-MED-12: drop per-pattern overlong entries to prevent ReDoS
+            lines = [p for p in lines if len(p) <= MAX_GITIGNORE_PATTERN_LEN]
             return pathspec.PathSpec.from_lines("gitignore", lines)
         except Exception:
             pass
@@ -158,6 +179,15 @@ def discover_local_files(
         if depth >= MAX_DIRECTORY_DEPTH:
             dirnames.clear()
             continue
+
+        # ADV-MED-14: prune symlinked directories that escape the allowed root
+        # before os.walk descends into them.
+        if follow_symlinks:
+            dirnames[:] = [
+                d for d in dirnames
+                if not (current / d).is_symlink()
+                or not _is_symlink_escape(root, current / d)
+            ]
 
         for filename in filenames:
             file_path = current / filename

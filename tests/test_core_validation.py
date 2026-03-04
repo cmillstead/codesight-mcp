@@ -22,11 +22,11 @@ class TestAssertNoNullBytes:
         assert_no_null_bytes("src/main.py")
 
     def test_null_byte_rejects(self):
-        with pytest.raises(ValidationError, match="null byte"):
+        with pytest.raises(ValidationError, match="control character"):
             assert_no_null_bytes("src/main.py\x00.txt")
 
     def test_null_in_middle(self):
-        with pytest.raises(ValidationError, match="null byte"):
+        with pytest.raises(ValidationError, match="control character"):
             assert_no_null_bytes("src\x00/../etc/passwd")
 
 
@@ -126,3 +126,90 @@ class TestValidatePath:
         with tempfile.TemporaryDirectory() as root:
             with pytest.raises(ValidationError):
                 validate_path("file.py\x00.txt", root)
+
+    def test_control_char_x01_blocked(self):
+        """ADV-LOW-4: control characters below 0x20 must be rejected."""
+        with tempfile.TemporaryDirectory() as root:
+            with pytest.raises(ValidationError):
+                validate_path("file\x01name.py", root)
+
+    def test_null_byte_still_blocked_regression(self):
+        """ADV-LOW-4 regression: \\x00 must still be rejected after rename."""
+        with tempfile.TemporaryDirectory() as root:
+            with pytest.raises(ValidationError):
+                validate_path("file.py\x00evil.txt", root)
+
+
+class TestAssertNoControlChars:
+    """ADV-LOW-4: assert_no_control_chars rejects all control characters."""
+
+    def test_clean_path(self):
+        from ironmunch.core.validation import assert_no_control_chars
+        assert_no_control_chars("src/main.py")  # no error
+
+    def test_null_byte_rejected(self):
+        from ironmunch.core.validation import assert_no_control_chars
+        with pytest.raises(ValidationError, match="control character"):
+            assert_no_control_chars("src/main.py\x00.txt")
+
+    def test_x01_rejected(self):
+        from ironmunch.core.validation import assert_no_control_chars
+        with pytest.raises(ValidationError, match="control character"):
+            assert_no_control_chars("src/\x01main.py")
+
+    def test_x1f_rejected(self):
+        from ironmunch.core.validation import assert_no_control_chars
+        with pytest.raises(ValidationError, match="control character"):
+            assert_no_control_chars("src/\x1fmain.py")
+
+    def test_space_allowed(self):
+        """Space (0x20) is NOT a control character and must be allowed."""
+        from ironmunch.core.validation import assert_no_control_chars
+        assert_no_control_chars("src/my file.py")  # no error
+
+
+class TestParseRepoMalformedField:
+    """ADV-LOW-5: parse_repo must raise RepoNotFoundError for stored repo without '/'."""
+
+    def test_malformed_repo_field_raises(self):
+        """A stored index entry whose repo field lacks a slash raises RepoNotFoundError."""
+        from unittest.mock import patch, MagicMock
+        from ironmunch.tools._common import parse_repo
+        from ironmunch.core.errors import RepoNotFoundError
+
+        # The mock must return an entry whose "repo" field ends with "/nodash"
+        # (so it matches the search) but contains no slash (to trigger the
+        # "Malformed repository identifier" guard in parse_repo).
+        # We simulate a corrupted entry: endswith check passes via a crafted string
+        # that ends with "/nodash" but has no slash — impossible in practice, so
+        # instead we mock the malformed path: entry matches but has no slash.
+        fake_store = MagicMock()
+        # Use a repo value that endswith "/nodash" AND has no slash — not achievable
+        # with a real string.  Instead, test that the guard fires by injecting the
+        # malformed field directly: an entry that matches AND whose "repo" has no "/".
+        # To make matching[0]["repo"] == "nodash" pass the endswith check we need
+        # r["repo"].endswith("/nodash") to be True, which requires the string to
+        # contain a slash.  The guard fires when matched entry's repo has no slash.
+        # Simplest: mock list_repos to return a match but with a no-slash repo field
+        # by overriding endswith via a custom object.
+        class NoSlashStr(str):
+            def endswith(self, suffix):  # type: ignore[override]
+                return True  # Always match so this entry is selected
+        fake_store.list_repos.return_value = [{"repo": NoSlashStr("nodash")}]
+
+        with patch("ironmunch.tools._common.IndexStore", return_value=fake_store):
+            with pytest.raises(RepoNotFoundError, match="Malformed repository identifier"):
+                parse_repo("nodash", storage_path="/tmp/fake")
+
+    def test_valid_repo_field_parses(self):
+        """A stored index entry with repo='owner/name' must parse successfully."""
+        from unittest.mock import patch, MagicMock
+        from ironmunch.tools._common import parse_repo
+
+        fake_store = MagicMock()
+        fake_store.list_repos.return_value = [{"repo": "owner/myrepo"}]
+
+        with patch("ironmunch.tools._common.IndexStore", return_value=fake_store):
+            owner, name = parse_repo("myrepo", storage_path="/tmp/fake")
+            assert owner == "owner"
+            assert name == "myrepo"

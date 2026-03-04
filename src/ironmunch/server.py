@@ -14,6 +14,7 @@ import json
 import os
 import time
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 from mcp.server import Server
@@ -34,6 +35,15 @@ from .core.limits import (
     MAX_ARGUMENT_LENGTH, MAX_BATCH_SYMBOLS, MAX_FILE_PATTERN_LENGTH,
     MAX_CONTEXT_LINES, MAX_SEARCH_RESULTS,
 )
+
+# ADV-LOW-7: Read CODE_INDEX_PATH once at startup so subsequent env mutations
+# do not change the storage path used by _validate_storage_path().
+_CODE_INDEX_PATH: str = os.environ.get("CODE_INDEX_PATH", "")
+
+# ADV-LOW-6: Resolve IRONMUNCH_ALLOWED_ROOTS to absolute paths at startup so
+# callers always receive fully-resolved paths regardless of cwd changes.
+_raw_roots = os.environ.get("IRONMUNCH_ALLOWED_ROOTS", "").split(":")
+ALLOWED_ROOTS: list[str] = [str(Path(r).resolve()) for r in _raw_roots if r]
 
 # Integer parameter bounds used by _sanitize_arguments.
 # Maps parameter name -> (min_value, max_value).
@@ -279,7 +289,8 @@ async def list_tools() -> list[Tool]:
             name="invalidate_cache",
             description=(
                 "Delete the index and cached files for a repository. "
-                "Forces a full re-index on next index_repo or index_folder call."
+                "Forces a full re-index on next index_repo or index_folder call. "
+                "Requires confirm=True to prevent accidental deletion."
                 + _DESTRUCTIVE_WARNING
             ),
             inputSchema={
@@ -288,6 +299,11 @@ async def list_tools() -> list[Tool]:
                     "repo": {
                         "type": "string",
                         "description": "Repository identifier (owner/repo or just repo name)"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "description": "Must be true to permanently delete this index. Pass confirm=True to confirm you want to permanently delete this index.",
+                        "default": False
                     }
                 },
                 "required": ["repo"]
@@ -400,7 +416,7 @@ def _sanitize_arguments(name: str, arguments: dict) -> dict | str:
         ]
 
     # Coerce boolean flags
-    for flag in ("follow_symlinks", "use_ai_summaries", "verify"):
+    for flag in ("follow_symlinks", "use_ai_summaries", "verify", "confirm"):
         if flag in arguments and not isinstance(arguments[flag], bool):
             arguments[flag] = arguments[flag] in (True, 1)
 
@@ -446,7 +462,6 @@ def _sanitize_arguments(name: str, arguments: dict) -> dict | str:
 def _validate_storage_path(storage_path: str | None) -> str | None:
     """Validate CODE_INDEX_PATH is absolute. Raises ValueError if not."""
     if storage_path is not None:
-        from pathlib import Path
         p = Path(storage_path)
         if not p.is_absolute():
             raise ValueError(
@@ -473,7 +488,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         }))]
 
     try:
-        storage_path = _validate_storage_path(os.environ.get("CODE_INDEX_PATH"))
+        storage_path = _validate_storage_path(_CODE_INDEX_PATH or None)
         if name == "index_repo":
             result = await index_repo(
                 url=arguments["url"],
@@ -481,11 +496,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 storage_path=storage_path
             )
         elif name == "index_folder":
-            raw_roots = os.environ.get("IRONMUNCH_ALLOWED_ROOTS")
-            allowed_roots = (
-                [r.strip() for r in raw_roots.split(":") if r.strip()]
-                if raw_roots else None
-            )
+            allowed_roots = ALLOWED_ROOTS if ALLOWED_ROOTS else None
             result = index_folder(
                 path=arguments["path"],
                 use_ai_summaries=arguments.get("use_ai_summaries", True),
@@ -535,7 +546,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         elif name == "invalidate_cache":
             result = invalidate_cache(
                 repo=arguments["repo"],
-                storage_path=storage_path
+                storage_path=storage_path,
+                confirm=arguments.get("confirm", False),
             )
         elif name == "search_text":
             result = search_text(

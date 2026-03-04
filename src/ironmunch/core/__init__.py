@@ -3,6 +3,7 @@
 from .validation import (
     ValidationError,
     validate_path,
+    assert_no_control_chars,
     assert_no_null_bytes,
     assert_safe_segments,
     assert_path_limits,

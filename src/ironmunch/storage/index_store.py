@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import shutil
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -129,9 +130,17 @@ class IndexStore:
         self._cleanup_stale_temps()
 
     def _cleanup_stale_temps(self):
-        """Remove stale .json.tmp files left by crashed writes."""
+        """Remove stale .json.tmp files left by crashed writes.
+
+        ADV-MED-2: Skip files newer than 60 seconds — they may belong to an
+        active save_index() Phase-2 write.  Removing them would corrupt an
+        ongoing write.
+        """
+        now = time.time()
         for tmp_file in self.base_path.glob("*.json.tmp"):
             try:
+                if (now - tmp_file.stat().st_mtime) < 60:
+                    continue  # skip recent files — may be active write
                 tmp_file.unlink()
             except OSError:
                 pass
@@ -247,6 +256,8 @@ class IndexStore:
                     continue  # Symlink or permission error — skip
 
             # Phase 2: write the JSON index to its .tmp path
+            # NOTE: ENOSPC or other OS error here leaves Phase-1 content .tmp files orphaned.
+            # _cleanup_stale_temps() (called on next IndexStore.__init__) recovers them.
             index_path = self._index_path(owner, name)
             json_data = json.dumps(self._index_to_dict(index), indent=2)
             self._atomic_write(index_path, json_data)
@@ -377,10 +388,19 @@ class IndexStore:
         if not file_path.exists():
             return None
 
-        # --- security gate: cap byte_length to MAX_FILE_SIZE ---
-        byte_length = min(symbol["byte_length"], MAX_FILE_SIZE)
+        # ADV-MED-11: cast to int and validate before use in seek/read.
+        try:
+            byte_offset = int(symbol["byte_offset"])
+            byte_length = int(symbol["byte_length"])
+        except (TypeError, ValueError):
+            raise ValidationError("Invalid byte_offset or byte_length")
+        if byte_offset < 0:
+            raise ValidationError("Invalid byte_offset")
+        if byte_length <= 0:
+            raise ValidationError("Invalid byte_length")
 
-        byte_offset = max(symbol["byte_offset"], 0)
+        # --- security gate: cap byte_length to MAX_FILE_SIZE ---
+        byte_length = min(byte_length, MAX_FILE_SIZE)
 
         # SEC-LOW-2: O_NOFOLLOW prevents symlink substitution attacks at read time
         try:
@@ -390,6 +410,10 @@ class IndexStore:
                 return None  # Symlink — reject
             raise
         with os.fdopen(fd, "rb") as f:
+            # ADV-MED-11: verify byte_offset is within file bounds
+            file_size = os.path.getsize(str(file_path))
+            if byte_offset >= file_size:
+                raise ValidationError("byte_offset out of bounds")
             f.seek(byte_offset)
             source_bytes = f.read(byte_length)
 
@@ -462,6 +486,8 @@ class IndexStore:
         Returns:
             Updated CodeIndex, or None if no existing index.
         """
+        # NOTE: load-modify-write with no advisory lock. Two concurrent callers on the
+        # same repo may silently lose one set of changes. Acceptable for MCP stdio transport.
         index = self.load_index(owner, name)
         if not index:
             return None
@@ -599,6 +625,9 @@ class IndexStore:
 
         deleted = False
 
+        # NOTE: delete_index is non-atomic (unlink JSON, then rmtree content).
+        # A concurrent save_index can interleave here, resulting in a partially-deleted
+        # or hollow index. Acceptable given single-process MCP stdio transport.
         if index_path.exists():
             index_path.unlink()
             deleted = True

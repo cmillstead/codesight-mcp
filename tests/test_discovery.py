@@ -877,3 +877,52 @@ class TestGithubPathEncoding:
         assert "src/sub/file.py" in captured_url[0], (
             f"Path slashes should not be encoded, got: {captured_url[0]!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# ADV-LOW-8: httpx Authorization header must not appear in DEBUG logs
+# ---------------------------------------------------------------------------
+
+class TestRedactAuthFilter:
+    """ADV-LOW-8: httpx Authorization DEBUG records must be suppressed."""
+
+    def test_authorization_header_not_in_debug_logs(self, caplog):
+        """A simulated httpx DEBUG record containing 'Authorization' must be filtered out."""
+        import logging
+        from ironmunch.discovery import _RedactAuthFilter
+
+        # Build a logger that mimics httpx
+        logger = logging.getLogger("httpx.test_redact")
+        # Ensure the filter is attached
+        logger.addFilter(_RedactAuthFilter())
+
+        with caplog.at_level(logging.DEBUG, logger="httpx.test_redact"):
+            logger.debug("Sending request with Authorization: Bearer secret-token-abc123")
+
+        # The record must have been suppressed
+        auth_records = [
+            r for r in caplog.records
+            if "authorization" in r.getMessage().lower()
+        ]
+        assert len(auth_records) == 0, (
+            f"Authorization header appeared in logs: {[r.getMessage() for r in auth_records]}"
+        )
+
+    def test_non_authorization_debug_log_passes_through(self, caplog):
+        """A httpx DEBUG record NOT containing 'Authorization' must not be filtered."""
+        import logging
+        from ironmunch.discovery import _RedactAuthFilter
+
+        logger = logging.getLogger("httpx.test_passthrough")
+        logger.addFilter(_RedactAuthFilter())
+
+        with caplog.at_level(logging.DEBUG, logger="httpx.test_passthrough"):
+            logger.debug("Sending GET https://api.github.com/repos/owner/repo")
+
+        non_auth_records = [
+            r for r in caplog.records
+            if "GET" in r.getMessage()
+        ]
+        assert len(non_auth_records) >= 1, (
+            "Non-authorization DEBUG record was incorrectly suppressed"
+        )

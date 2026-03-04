@@ -168,10 +168,12 @@ def sanitize_repo_identifier(identifier: str) -> str:
     """Validate a repository owner or name identifier.
 
     Allows: alphanumeric, dash, underscore, dot.
-    Rejects: empty, slashes, null bytes, traversal sequences (..).
+    Rejects: empty, too-long, slashes, null bytes, traversal sequences (..).
     """
     if not identifier:
         raise ValidationError("Repository identifier is empty")
+    if len(identifier) > 100:
+        raise ValidationError("Repository identifier too long")
     if "\x00" in identifier:
         raise ValidationError("Repository identifier contains null byte")
     if ".." in identifier:

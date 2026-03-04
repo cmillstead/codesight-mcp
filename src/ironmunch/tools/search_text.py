@@ -18,6 +18,10 @@ from ..storage import IndexStore
 from ._common import parse_repo, timed, elapsed_ms
 
 
+# NOTE: search_text performs substring matching over raw file contents,
+# including content not matching the inline secret patterns. A determined
+# caller can binary-search for arbitrary content (~1300 queries per 20-char token).
+# Mitigation: this tool requires an indexed repo; users control what gets indexed.
 def search_text(
     repo: str,
     query: str,

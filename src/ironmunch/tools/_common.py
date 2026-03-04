@@ -36,7 +36,10 @@ def parse_repo(
             raise RepoNotFoundError(f"Repository not found: {repo}")
         if len(matching) > 1:
             raise RepoNotFoundError("Ambiguous repository name. Use full owner/repo format (e.g., 'owner/myproject').")
-        owner, name = matching[0]["repo"].split("/", 1)
+        repo_field = matching[0]["repo"]
+        if "/" not in repo_field:
+            raise RepoNotFoundError("Malformed repository identifier in index")
+        owner, name = repo_field.split("/", 1)
 
     # Validate identifiers against injection
     try:

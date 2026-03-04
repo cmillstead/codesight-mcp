@@ -65,14 +65,14 @@ def search_symbols(
     for sym in results[:max_results]:
         score = calculate_symbol_score(sym, query_lower, query_words)
         scored_results.append({
-            "id": sym["id"],
+            "id": wrap_untrusted_content(sym["id"]),
             "kind": sym["kind"],
-            "name": sym["name"],
-            "file": sym["file"],
+            "name": wrap_untrusted_content(sym["name"]),
+            "file": wrap_untrusted_content(sym["file"]),
             "line": sym["line"],
             "signature": wrap_untrusted_content(sym["signature"]),
             "summary": wrap_untrusted_content(sym.get("summary", "")),
-            "score": score,
+            "score": round(score, 1),
         })
 
     ms = elapsed_ms(start)

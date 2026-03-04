@@ -132,7 +132,7 @@ class TestUnicodeBlackMagic:
     def test_null_in_unicode_escape(self):
         """Null byte disguised as unicode escape."""
         with tempfile.TemporaryDirectory() as root:
-            with pytest.raises(ValidationError, match="null byte"):
+            with pytest.raises(ValidationError, match="control character"):
                 validate_path("test\u0000.py", root)
 
     def test_byte_order_mark_in_path(self):
@@ -253,7 +253,7 @@ class TestIndexPoisoningDeepDive:
                 result = store.get_symbol_content("evil", "repo", "test::func")
                 if result:
                     assert len(result) < 1000
-            except (OSError, ValueError):
+            except (OSError, ValueError, ValidationError):
                 pass
 
     def test_enormous_byte_length(self):
@@ -271,7 +271,7 @@ class TestIndexPoisoningDeepDive:
                 assert len(result) < 1000
 
     def test_byte_offset_past_eof(self):
-        """Symbol with byte_offset past end of file."""
+        """Symbol with byte_offset past end of file raises ValidationError."""
         with tempfile.TemporaryDirectory() as tmp:
             self._make_index(tmp, "oob", "repo")
 
@@ -280,9 +280,8 @@ class TestIndexPoisoningDeepDive:
             (Path(tmp) / "oob__repo.json").write_text(json.dumps(data))
 
             store = IndexStore(tmp)
-            result = store.get_symbol_content("oob", "repo", "test::func")
-            assert result is not None
-            assert len(result) == 0 or result.strip() == ""
+            with pytest.raises(ValidationError, match="byte_offset out of bounds"):
+                store.get_symbol_content("oob", "repo", "test::func")
 
     def test_deeply_nested_json_bomb(self):
         """Index JSON with deep nesting to exhaust stack."""
@@ -1012,10 +1011,10 @@ class TestRepoIdentifierExtremeEdition:
     """Push the repo identifier sanitizer to its limits."""
 
     def test_very_long_identifier(self):
-        """10,000 character identifier of valid characters."""
+        """10,000 character identifier of valid characters — rejected by length cap (ADV-LOW-3)."""
         long_id = "a" * 10000
-        result = sanitize_repo_identifier(long_id)
-        assert result == long_id
+        with pytest.raises(ValidationError, match="too long"):
+            sanitize_repo_identifier(long_id)
 
     def test_just_dots(self):
         """'...' — three dots, contains '..'."""

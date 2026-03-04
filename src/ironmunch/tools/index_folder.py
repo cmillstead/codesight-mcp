@@ -6,6 +6,7 @@ path traversal) is handled by ``discover_local_files()``.
 """
 
 import errno
+import hashlib
 import os
 from pathlib import Path
 from typing import Optional
@@ -144,8 +145,13 @@ def index_folder(
         # Generate summaries
         all_symbols = summarize_symbols(all_symbols, use_ai=use_ai_summaries)
 
-        # Create repo identifier from folder path
-        repo_name = folder_path.name
+        # Create repo identifier from folder path.
+        # ADV-HIGH-2: use a short SHA-256 hash of the full resolved path so that
+        # two directories with the same basename (e.g. /projects/myapp and
+        # /tmp/myapp) never collide in storage.
+        resolved = folder_path.resolve()
+        path_hash = hashlib.sha256(str(resolved).encode()).hexdigest()[:12]
+        repo_name = f"{resolved.name}-{path_hash}"
         owner = "local"
 
         # --- security gate: validate generated identifiers ---

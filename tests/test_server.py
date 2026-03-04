@@ -621,12 +621,21 @@ class TestCodeIndexPathValidation:
         assert result.startswith("/")
 
     async def test_relative_env_var_causes_error_in_call_tool(self, monkeypatch):
-        """SEC-LOW-7: Relative CODE_INDEX_PATH env var causes call_tool to return an error."""
-        monkeypatch.setenv("CODE_INDEX_PATH", "relative/path")
-        result = await call_tool("list_repos", {})
-        assert len(result) == 1
-        text = result[0].text
-        assert "error" in text.lower()
+        """SEC-LOW-7: Relative CODE_INDEX_PATH env var causes call_tool to return an error.
+
+        Note: _CODE_INDEX_PATH is now read once at module import time (ADV-LOW-7).
+        To test the validation logic, we patch _CODE_INDEX_PATH directly.
+        """
+        import ironmunch.server as server_module
+        original = server_module._CODE_INDEX_PATH
+        try:
+            server_module._CODE_INDEX_PATH = "relative/path"
+            result = await call_tool("list_repos", {})
+            assert len(result) == 1
+            text = result[0].text
+            assert "error" in text.lower()
+        finally:
+            server_module._CODE_INDEX_PATH = original
 
 
 class TestParseRepoBareNameLookup:
@@ -724,8 +733,9 @@ class TestGetSymbolsMixed:
             assert "symbols" in result, f"Expected 'symbols' key in result: {result}"
             assert "errors" in result, f"Expected 'errors' key in result: {result}"
 
+            # id fields are now wrapped with spotlighting markers (ADV-HIGH-4)
             found_ids = [s["id"] for s in result["symbols"]]
-            assert valid_id in found_ids, (
+            assert any(valid_id in wrapped for wrapped in found_ids), (
                 f"Valid symbol {valid_id!r} missing from symbols: {found_ids}"
             )
 
@@ -733,3 +743,48 @@ class TestGetSymbolsMixed:
             assert invalid_id in error_ids, (
                 f"Invalid symbol {invalid_id!r} missing from errors: {error_ids}"
             )
+
+
+# -- ADV-LOW-6: IRONMUNCH_ALLOWED_ROOTS resolved to absolute paths at startup --
+
+class TestAllowedRootsAbsolutePaths:
+    """ADV-LOW-6: IRONMUNCH_ALLOWED_ROOTS must be resolved to absolute paths."""
+
+    def test_relative_env_path_resolves_to_absolute(self):
+        """A relative path in IRONMUNCH_ALLOWED_ROOTS must resolve to an absolute path."""
+        from pathlib import Path as _Path
+        relative = "some/relative/path"
+        resolved = str(_Path(relative).resolve())
+        assert resolved.startswith("/"), (
+            f"Expected resolved path to be absolute, got: {resolved!r}"
+        )
+
+    def test_allowed_roots_are_absolute_paths(self):
+        """ALLOWED_ROOTS module-level list must contain only absolute paths."""
+        import ironmunch.server as server_module
+        for root in server_module.ALLOWED_ROOTS:
+            assert root.startswith("/"), (
+                f"ALLOWED_ROOTS entry is not absolute: {root!r}"
+            )
+
+
+# -- ADV-LOW-7: CODE_INDEX_PATH read once at startup --
+
+class TestCodeIndexPathReadOnce:
+    """ADV-LOW-7: CODE_INDEX_PATH must be read once at startup; later env changes must not affect it."""
+
+    def test_env_mutation_after_import_does_not_affect_stored_path(self, monkeypatch):
+        """Modifying os.environ after module import must not change _CODE_INDEX_PATH."""
+        import ironmunch.server as server_module
+
+        # Record the value frozen at import time
+        frozen = server_module._CODE_INDEX_PATH
+
+        # Mutate the environment
+        monkeypatch.setenv("CODE_INDEX_PATH", "/tmp/new-path-that-should-be-ignored")
+
+        # The module-level constant must not have changed
+        assert server_module._CODE_INDEX_PATH == frozen, (
+            f"_CODE_INDEX_PATH changed after env mutation: "
+            f"was {frozen!r}, now {server_module._CODE_INDEX_PATH!r}"
+        )

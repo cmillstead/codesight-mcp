@@ -1,5 +1,7 @@
 """Three-tier summarization: docstring > AI (Haiku) > signature fallback."""
 
+import logging
+import math
 import os
 import re
 import secrets
@@ -7,8 +9,26 @@ from typing import Optional
 
 import httpx as _httpx
 
+from ..core.validation import ValidationError
 from ..parser.symbols import Symbol
 from ..security import sanitize_signature_for_api
+
+logger = logging.getLogger(__name__)
+
+# Maximum number of batches allowed per summarize_batch() invocation.
+# Prevents runaway token usage for adversarially large symbol lists.
+MAX_BATCHES_PER_INDEX = 50
+
+# Injection phrases that, if found at the start of a summary (case-insensitive),
+# indicate an attempted prompt injection — replace with empty string.
+_INJECTION_PREFIXES = (
+    "ignore ",
+    "system:",
+    "[inst]",
+    "### ",
+    "assistant:",
+    "user:",
+)
 
 
 def extract_summary_from_docstring(docstring: str) -> str:
@@ -27,7 +47,14 @@ def extract_summary_from_docstring(docstring: str) -> str:
     if "." in first_line:
         first_line = first_line[:first_line.index(".") + 1]
 
-    return sanitize_signature_for_api(first_line[:120])
+    result = sanitize_signature_for_api(first_line[:120])
+
+    # Strip injection phrases: if the summary starts with a known injection
+    # prefix, discard it entirely (ADV-MED-10).
+    if any(result.lower().startswith(prefix) for prefix in _INJECTION_PREFIXES):
+        return ""
+
+    return result
 
 
 def signature_fallback(symbol: Symbol) -> str:
@@ -47,7 +74,7 @@ def signature_fallback(symbol: Symbol) -> str:
         return f"Type definition {name}"
     else:
         # For functions/methods, include parameter hint
-        return sig[:120] if sig else f"{kind} {name}"
+        return sanitize_signature_for_api(sig[:120]) if sig else f"{kind} {name}"
 
 
 class BatchSummarizer:
@@ -92,6 +119,12 @@ class BatchSummarizer:
 
         if not to_summarize:
             return symbols
+
+        # ADV-HIGH-1: Reject symbol lists that would require more than
+        # MAX_BATCHES_PER_INDEX batches to prevent runaway API usage.
+        n_batches = math.ceil(len(to_summarize) / batch_size)
+        if n_batches > MAX_BATCHES_PER_INDEX:
+            raise ValidationError("Summarization limit exceeded: too many symbols")
 
         # Process in batches
         for i in range(0, len(to_summarize), batch_size):
@@ -159,10 +192,16 @@ class BatchSummarizer:
             safe_sig = sanitize_signature_for_api(safe_sig)
             lines.append(f"  [{i}] {sym.kind}: {sig_open}{safe_sig}{sig_close}")
 
+        resp_start = f"RESP_{nonce}_START"
+        resp_end = f"RESP_{nonce}_END"
+
         lines.extend([
             "",
             "Output format: NUMBER. SUMMARY",
             "Example: 1. Authenticates users with username and password.",
+            "",
+            f"Begin your response with the marker: {resp_start}",
+            f"End your response with the marker: {resp_end}",
             "",
             "Summaries:",
         ])
@@ -172,16 +211,32 @@ class BatchSummarizer:
     def _parse_response(self, text: str, expected_count: int, nonce: str) -> list[str]:
         """Parse numbered summaries from response.
 
-        The nonce parameter is accepted for API symmetry with _build_prompt;
-        it is not used during parsing because the response uses plain numbered
-        lines, not delimiter tokens.
+        ADV-HIGH-3: Uses nonce-based response delimiters (RESP_<nonce>_START /
+        RESP_<nonce>_END) to extract content.  If the delimiters are absent the
+        method falls back to full-text positional parsing (degraded mode).
 
         Summaries are sanitized before storage (SEC-LOW-9): non-printable
         characters (except newlines) are stripped and length is capped at 200.
         """
+        resp_start = f"RESP_{nonce}_START"
+        resp_end = f"RESP_{nonce}_END"
+
+        # Try nonce-bounded extraction first
+        if resp_start in text and resp_end in text:
+            start_idx = text.index(resp_start) + len(resp_start)
+            end_idx = text.index(resp_end)
+            parse_text = text[start_idx:end_idx]
+        else:
+            # Degraded mode: nonce delimiters missing, warn and parse full text
+            logger.warning(
+                "ADV-HIGH-3: Response nonce delimiters missing; "
+                "falling back to full-text parse (degraded mode)"
+            )
+            parse_text = text
+
         summaries = [""] * expected_count
 
-        for line in text.split("\n"):
+        for line in parse_text.split("\n"):
             line = line.strip()
             if not line:
                 continue
@@ -198,6 +253,9 @@ class BatchSummarizer:
                         summary = sanitize_signature_for_api(
                             re.sub(r'[^\x20-\x7e\n]', '', summary).strip()[:200]
                         )
+                        # ADV-LOW-1: strip injection phrases from AI summaries
+                        if any(summary.lower().startswith(p) for p in _INJECTION_PREFIXES):
+                            summary = ""
                         summaries[num - 1] = summary
                 except ValueError:
                     continue

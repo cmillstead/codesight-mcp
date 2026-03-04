@@ -4,6 +4,7 @@ from typing import Optional
 
 from ..core.boundaries import make_meta, wrap_untrusted_content
 from ..core.errors import sanitize_error, RepoNotFoundError
+from ..core.validation import ValidationError
 from ..storage import IndexStore
 from ..parser import Symbol, SymbolNode, build_symbol_tree
 from ._common import parse_repo, timed, elapsed_ms
@@ -37,6 +38,10 @@ def get_file_outline(
 
     if not index:
         return {"error": f"Repository not indexed: {owner}/{name}"}
+
+    # --- security gate: validate file_path is tracked by the index ---
+    if file_path not in index.source_files:
+        raise ValidationError("File not found in index")
 
     # Filter symbols to this file
     file_symbols = [s for s in index.symbols if s.get("file") == file_path]
@@ -100,9 +105,9 @@ def _dict_to_symbol(d: dict) -> Symbol:
 def _node_to_dict(node: SymbolNode) -> dict:
     """Convert SymbolNode to output dict."""
     result = {
-        "id": node.symbol.id,
+        "id": wrap_untrusted_content(node.symbol.id),
         "kind": node.symbol.kind,
-        "name": node.symbol.name,
+        "name": wrap_untrusted_content(node.symbol.name),
         "signature": wrap_untrusted_content(node.symbol.signature),
         "summary": wrap_untrusted_content(node.symbol.summary),
         "line": node.symbol.line,

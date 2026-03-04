@@ -26,14 +26,14 @@ def test_invalidate_cache_existing_repo(tmp_path):
     store = IndexStore(str(tmp_path))
     assert store.load_index("test", "repo") is not None
 
-    result = invalidate_cache("test/repo", storage_path=str(tmp_path))
+    result = invalidate_cache("test/repo", storage_path=str(tmp_path), confirm=True)
     assert result["success"] is True
     assert store.load_index("test", "repo") is None
 
 
 def test_invalidate_cache_nonexistent_repo(tmp_path):
     """invalidate_cache returns success: False for a repo that doesn't exist."""
-    result = invalidate_cache("owner/doesnotexist", storage_path=str(tmp_path))
+    result = invalidate_cache("owner/doesnotexist", storage_path=str(tmp_path), confirm=True)
     assert result["success"] is False
     assert "error" in result
 
@@ -45,7 +45,26 @@ def test_invalidate_cache_removes_content_dir(tmp_path):
     content_dirs = [d for d in tmp_path.iterdir() if d.is_dir() and "test" in d.name]
     assert len(content_dirs) > 0, "Content directory should exist after indexing"
 
-    result = invalidate_cache("test/repo", storage_path=str(tmp_path))
+    result = invalidate_cache("test/repo", storage_path=str(tmp_path), confirm=True)
     assert result["success"] is True
     remaining_dirs = [d for d in tmp_path.iterdir() if d.is_dir() and "test" in d.name]
     assert len(remaining_dirs) == 0, "Content directory should be gone after invalidation"
+
+
+def test_invalidate_cache_without_confirm_raises_validation_error(tmp_path):
+    """ADV-MED-13: invalidate_cache without confirm=True must raise ValidationError."""
+    from ironmunch.core.validation import ValidationError
+    _make_store_with_repo(str(tmp_path))
+    with pytest.raises(ValidationError, match="confirm=True"):
+        invalidate_cache("test/repo", storage_path=str(tmp_path))
+
+
+def test_invalidate_cache_with_confirm_true_deletes_index(tmp_path):
+    """ADV-MED-13: invalidate_cache with confirm=True must succeed and delete the index."""
+    _make_store_with_repo(str(tmp_path))
+    store = IndexStore(str(tmp_path))
+    assert store.load_index("test", "repo") is not None
+
+    result = invalidate_cache("test/repo", storage_path=str(tmp_path), confirm=True)
+    assert result["success"] is True
+    assert store.load_index("test", "repo") is None
