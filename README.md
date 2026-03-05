@@ -31,6 +31,7 @@ Add ironmunch to your MCP client configuration. For Claude Desktop:
     "ironmunch": {
       "command": "ironmunch",
       "env": {
+        "IRONMUNCH_ALLOWED_ROOTS": "/Users/you/src",
         "GITHUB_TOKEN": "ghp_...",
         "ANTHROPIC_API_KEY": "sk-ant-..."
       }
@@ -71,6 +72,19 @@ chmod +x .git/hooks/post-commit .git/hooks/post-push
 
 Both hooks run in the background so they never block your workflow. Remove `--no-ai` from either hook if you want AI-generated summaries updated automatically.
 
+**One-time hook setup** (git hooks don't inherit your shell environment):
+
+```bash
+mkdir -p ~/.config/ironmunch
+cat > ~/.config/ironmunch/env <<EOF
+export GITHUB_TOKEN=ghp_...
+export IRONMUNCH_BIN=/path/to/.venv/bin/ironmunch
+EOF
+chmod 600 ~/.config/ironmunch/env
+```
+
+`IRONMUNCH_BIN` should point to the same `ironmunch` binary used by your MCP client. Without it, the hooks may resolve to a shim (e.g. pyenv) that doesn't have the module installed.
+
 You can also call the indexer directly from the command line:
 
 ```bash
@@ -108,9 +122,10 @@ ironmunch exposes 11 MCP tools:
 
 | Variable | Description |
 |----------|-------------|
-| `CODE_INDEX_PATH` | Custom storage directory for indexes (default: `~/.ironmunch/`) |
-| `GITHUB_TOKEN` | GitHub personal access token for private repos and higher rate limits |
-| `ANTHROPIC_API_KEY` | Anthropic API key for AI-generated symbol summaries |
+| `IRONMUNCH_ALLOWED_ROOTS` | Colon-separated list of directories `index_folder` is allowed to index. **Required** for local folder indexing — denied by default if unset. Example: `/Users/you/src:/home/you/projects` |
+| `GITHUB_TOKEN` | GitHub personal access token. Required for private repos; strongly recommended to avoid rate limits on public repos. |
+| `ANTHROPIC_API_KEY` | Anthropic API key for AI-generated symbol summaries. Optional — falls back to docstrings if unset. |
+| `CODE_INDEX_PATH` | Custom storage directory for indexes. Default: `~/.code-index/` |
 
 ## Attribution
 
