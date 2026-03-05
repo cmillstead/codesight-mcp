@@ -1,0 +1,13 @@
+#!/bin/sh
+# ironmunch post-commit hook
+# Reindexes the current repo after each commit (incremental -- skips unchanged files).
+# Install: cp hooks/post-commit .git/hooks/post-commit && chmod +x .git/hooks/post-commit
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+IRONMUNCH="$(command -v ironmunch)"
+
+if [ -z "$IRONMUNCH" ]; then
+    exit 0
+fi
+
+"$IRONMUNCH" index "$REPO_ROOT" --no-ai > /dev/null 2>&1 &

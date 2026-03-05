@@ -52,6 +52,26 @@ The AI will call `index_folder` or `index_repo`. This fetches files, parses ASTs
 
 Once indexed, the AI can use `get_repo_outline`, `search_symbols`, and `get_symbol` to navigate the codebase efficiently -- retrieving only the symbols it needs instead of entire files.
 
+## Git Hook: Auto-Reindex on Commit
+
+ironmunch includes a post-commit hook that reindexes your repo after each commit. Only changed files are re-parsed (incremental via content hash), so it's fast.
+
+**Install in any repo:**
+
+```bash
+cp /path/to/ironmunch/hooks/post-commit .git/hooks/post-commit
+chmod +x .git/hooks/post-commit
+```
+
+The hook calls `ironmunch index <repo-root> --no-ai` in the background so commits never block. Remove `--no-ai` from the hook if you want AI-generated summaries updated on each commit.
+
+You can also call the indexer directly from the command line:
+
+```bash
+ironmunch index ~/src/myproject
+ironmunch index ~/src/myproject --no-ai   # skip AI summaries (faster)
+```
+
 ## Security Model
 
 ironmunch treats the connected AI as an untrusted principal. Every tool argument is validated before use. Every file path from the index is re-validated at retrieval time. Error messages are sanitized so system paths never leak.
