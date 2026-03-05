@@ -51,16 +51,27 @@ def assert_safe_segments(path: str) -> None:
 
 
 def assert_path_limits(path: str) -> None:
-    """Step 3: Enforce max length and depth."""
+    """Step 3: Enforce max length and depth.
+
+    The depth limit applies only to relative paths.  Absolute paths have
+    system-level components (e.g. /private/var/folders/…/T/tmpXXXX) that
+    exceed MAX_DIRECTORY_DEPTH on macOS even for shallow repository files,
+    so we skip the depth check when the path is already absolute.  Absolute
+    paths only reach this function when safe_read_file re-validates an
+    already-validated abs_path for defense-in-depth; the relative-path check
+    already enforced depth when the path was first validated.
+    """
     if len(path) > MAX_PATH_LENGTH:
         raise ValidationError(
             f"Path exceeds maximum length ({len(path)} > {MAX_PATH_LENGTH})"
         )
-    depth = len(Path(path).parts)
-    if depth > MAX_DIRECTORY_DEPTH:
-        raise ValidationError(
-            f"Path exceeds maximum depth ({depth} > {MAX_DIRECTORY_DEPTH})"
-        )
+    p = Path(path)
+    if not p.is_absolute():
+        depth = len(p.parts)
+        if depth > MAX_DIRECTORY_DEPTH:
+            raise ValidationError(
+                f"Path exceeds maximum depth ({depth} > {MAX_DIRECTORY_DEPTH})"
+            )
 
 
 def is_within(root: Path | str, path: Path | str) -> bool:
