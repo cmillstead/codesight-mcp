@@ -39,11 +39,18 @@ Add ironmunch to your MCP client configuration. For Claude Desktop:
 }
 ```
 
-Then ask your AI to index a repository:
+**Step 1: Index a repository.**
 
-> "Index the repo at ~/src/myproject"
+Before any other tools work, you must index at least one repository. Ask your AI:
 
-The AI will call `index_folder`, then use `get_repo_outline`, `search_symbols`, and `get_symbol` to explore the codebase efficiently -- retrieving only the symbols it needs instead of entire files.
+- For a local folder: `"Index the repo at ~/src/myproject"`
+- For a GitHub repo: `"Index the GitHub repo owner/myproject"`
+
+The AI will call `index_folder` or `index_repo`. This fetches files, parses ASTs, and extracts symbols into local storage. You only need to do this once -- subsequent calls skip unchanged files.
+
+**Step 2: Explore the codebase.**
+
+Once indexed, the AI can use `get_repo_outline`, `search_symbols`, and `get_symbol` to navigate the codebase efficiently -- retrieving only the symbols it needs instead of entire files.
 
 ## Security Model
 
