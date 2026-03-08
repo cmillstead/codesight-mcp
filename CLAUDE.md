@@ -2,7 +2,7 @@
 
 ## Code Navigation
 
-This repo is indexed in ironmunch. Use ironmunch MCP tools for code exploration instead of reading full files:
+This repo is indexed in codesight-mcp. Use codesight-mcp MCP tools for code exploration instead of reading full files:
 
 - `search_symbols` — find functions, classes, methods by name or description
 - `get_file_outline` — all symbols in a file with signatures

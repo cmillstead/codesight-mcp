@@ -1,6 +1,6 @@
 """Index a local folder -- walk, parse, summarize, save.
 
-This is a thin wrapper that delegates discovery to ``ironmunch.discovery``
+This is a thin wrapper that delegates discovery to ``codesight_mcp.discovery``
 (already extracted and ported). File security filtering (symlinks, secrets,
 path traversal) is handled by ``discover_local_files()``.
 """
@@ -72,7 +72,7 @@ def index_folder(
     warnings: list[str] = []
 
     try:
-        # Discover source files (with security filtering via ironmunch.discovery)
+        # Discover source files (with security filtering via codesight_mcp.discovery)
         source_files, discover_warnings = discover_local_files(
             folder_path,
             extra_ignore_patterns=extra_ignore_patterns,

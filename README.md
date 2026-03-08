@@ -1,37 +1,93 @@
-# ironmunch
+# codesight-mcp
 
-Security-hardened, token-efficient MCP server for code exploration via tree-sitter AST parsing.
+<p align="center">
+  <br>
+  <b>Security-hardened, token-efficient code intelligence for AI assistants.</b>
+  <br><br>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/github/license/cevinclein/codesight-mcp?style=flat-square" alt="License">
+  </a>
+  <img src="https://img.shields.io/badge/MCP-Compatible-green?style=flat-square" alt="MCP Compatible">
+  <img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square&logo=python" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/tests-737%2B-brightgreen?style=flat-square" alt="Tests">
+</p>
+
+An **MCP server** that indexes local and GitHub codebases via tree-sitter AST parsing, then exposes 17 tools for symbol retrieval, code graph traversal, and impact analysis — all with byte-offset precision to cut token costs by ~99% compared to sending full files.
 
 Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gravelle, hardened with security patterns from [basalt-mcp](https://github.com/cmillstead/basalt-mcp).
 
-## Key Features
+---
 
-- **Tree-sitter AST parsing** for 7 languages: Python, JavaScript, TypeScript, Go, Rust, Java, PHP
-- **Byte-offset O(1) symbol retrieval** -- cut token costs by ~99% compared to sending full files
-- **Incremental indexing** via content hashing -- skip unchanged files on re-index
-- **6-step path validation chain** -- null bytes, traversal, limits, resolution, containment, symlinks
-- **Content boundary markers** -- indirect prompt injection defense based on Microsoft spotlighting research
-- **Error sanitization** -- raw exceptions never reach the AI; system paths are always stripped
-- **664 tests** -- adversarial, security, integration, and unit coverage with real temp directories
-- **Local + GitHub repository indexing** -- index folders on disk or fetch from GitHub
+## Quick Navigation
 
-## Installation
+- [Features](#features)
+- [Supported Languages](#supported-languages)
+- [Quick Start](#quick-start)
+- [Tools Reference](#tools)
+- [Code Graph & Relationship Analysis](#code-graph--relationship-analysis)
+- [Security Model](#security-model)
+- [Git Hooks](#git-hooks-auto-reindex-on-commit-and-push)
+- [Environment Variables](#environment-variables)
 
-```bash
-pip install ironmunch
-```
+---
+
+## Features
+
+### Code Indexing & Retrieval
+- **Tree-sitter AST parsing** across 13 languages with byte-offset O(1) symbol retrieval
+- **Incremental indexing** via content hashing — skip unchanged files on re-index
+- **Local + GitHub repository indexing** — index folders on disk or fetch from GitHub
+- **AI-generated summaries** — optional Anthropic API integration for symbol descriptions
+- **Full-text search** across indexed file contents with redaction-aware matching
+
+### Code Graph & Relationship Analysis
+- **Callers & callees** — who calls a function, and what does it call?
+- **Call chains** — trace the full path between any two symbols
+- **Type hierarchy** — inheritance trees and interface implementations
+- **Import graphs** — which files import what, and from where?
+- **Impact analysis** — change a function, see everything affected downstream
+
+### Security
+- **6-step path validation chain** — null bytes, traversal, limits, resolution, containment, symlinks
+- **Content boundary markers** — indirect prompt injection defense (Microsoft spotlighting research)
+- **Error sanitization** — raw exceptions never reach the AI; system paths are always stripped
+- **737+ tests** — adversarial, security, integration, and unit coverage with real temp directories
+
+---
+
+## Supported Languages
+
+| | Language | | Language | | Language |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 🐍 | **Python** | 📜 | **JavaScript** | 🔷 | **TypeScript** |
+| 🏗️ | **C / C++** | #️⃣ | **C#** | ☕ | **Java** |
+| 🐹 | **Go** | 🦀 | **Rust** | 🐘 | **PHP** |
+| 💎 | **Ruby** | 🍎 | **Swift** | 🎨 | **Kotlin** |
+
+Each language parser extracts functions, classes, methods, parameters, call relationships, imports, and inheritance to build a comprehensive code graph.
+
+---
 
 ## Quick Start
 
-**Step 1: Configure your MCP client.**
+### Step 1: Install
 
-Add ironmunch to your MCP client configuration. For Claude Desktop:
+```bash
+# From source (recommended — not published to PyPI)
+git clone https://github.com/cevinclein/codesight-mcp.git
+cd codesight-mcp
+pip install -e .
+```
+
+### Step 2: Configure your MCP client
+
+Add codesight-mcp to your MCP client configuration. For **Claude Desktop**:
 
 ```json
 {
   "mcpServers": {
-    "ironmunch": {
-      "command": "ironmunch",
+    "codesight-mcp": {
+      "command": "codesight-mcp",
       "env": {
         "IRONMUNCH_ALLOWED_ROOTS": "/Users/you/src",
         "GITHUB_TOKEN": "ghp_...",
@@ -42,74 +98,179 @@ Add ironmunch to your MCP client configuration. For Claude Desktop:
 }
 ```
 
-- `IRONMUNCH_ALLOWED_ROOTS` is required for local folder indexing — set it to the parent directory of your projects (colon-separated for multiple roots).
-- `GITHUB_TOKEN` is required for private repos and to avoid rate limits on public ones.
-- `ANTHROPIC_API_KEY` is optional — enables AI-generated symbol summaries.
+For **Claude Code**, add to `~/.claude/settings.json`:
 
-**Step 2: Index a repository.**
+```json
+{
+  "mcpServers": {
+    "codesight-mcp": {
+      "command": "/path/to/.venv/bin/codesight-mcp",
+      "env": {
+        "IRONMUNCH_ALLOWED_ROOTS": "/Users/you/src",
+        "GITHUB_TOKEN": "ghp_..."
+      }
+    }
+  }
+}
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `IRONMUNCH_ALLOWED_ROOTS` | Yes (local) | Colon-separated directories `index_folder` may access. Denied by default if unset. |
+| `GITHUB_TOKEN` | Yes (GitHub) | Required for private repos; recommended to avoid rate limits on public repos. |
+| `ANTHROPIC_API_KEY` | No | Enables AI-generated symbol summaries. Falls back to docstrings if unset. |
+
+### Step 3: Index a repository
 
 Before any other tools work, you must index at least one repository. Ask your AI:
 
-- For a local folder: `"Index the repo at ~/src/myproject"`
-- For a GitHub repo: `"Index the GitHub repo owner/myproject"`
+- **Local folder:** *"Index the repo at ~/src/myproject"*
+- **GitHub repo:** *"Index the GitHub repo owner/myproject"*
 
-The AI will call `index_folder` or `index_repo`. This fetches files, parses ASTs, and extracts symbols into local storage. You only need to do this once -- subsequent calls skip unchanged files.
+The AI calls `index_folder` or `index_repo`, which fetches files, parses ASTs, and extracts symbols into `~/.code-index/`. Subsequent calls skip unchanged files automatically.
 
-**Step 3 (Claude Code): Configure permissions and navigation.**
+### Step 4: Explore
 
-Claude Code requires two extra steps:
+Once indexed, the AI uses `get_repo_outline`, `search_symbols`, and `get_symbol` to navigate your codebase — retrieving only the symbols it needs instead of entire files.
 
-**a) Allow ironmunch tools** to avoid a permission prompt on every call. Add to `~/.claude/settings.json`:
+### Step 5 (Claude Code): Configure permissions
+
+Allow codesight-mcp tools to avoid a permission prompt on every call. Add to `~/.claude/settings.json`:
 
 ```json
 "permissions": {
   "allow": [
-    "mcp__ironmunch__search_symbols",
-    "mcp__ironmunch__search_text",
-    "mcp__ironmunch__get_symbol",
-    "mcp__ironmunch__get_symbols",
-    "mcp__ironmunch__get_file_outline",
-    "mcp__ironmunch__get_file_tree",
-    "mcp__ironmunch__get_repo_outline",
-    "mcp__ironmunch__list_repos",
-    "mcp__ironmunch__index_repo",
-    "mcp__ironmunch__index_folder"
+    "mcp__codesight_mcp__search_symbols",
+    "mcp__codesight_mcp__search_text",
+    "mcp__codesight_mcp__get_symbol",
+    "mcp__codesight_mcp__get_symbols",
+    "mcp__codesight_mcp__get_file_outline",
+    "mcp__codesight_mcp__get_file_tree",
+    "mcp__codesight_mcp__get_repo_outline",
+    "mcp__codesight_mcp__list_repos",
+    "mcp__codesight_mcp__index_repo",
+    "mcp__codesight_mcp__index_folder",
+    "mcp__codesight_mcp__get_callers",
+    "mcp__codesight_mcp__get_callees",
+    "mcp__codesight_mcp__get_call_chain",
+    "mcp__codesight_mcp__get_type_hierarchy",
+    "mcp__codesight_mcp__get_imports",
+    "mcp__codesight_mcp__get_impact"
   ]
 }
 ```
 
 (`invalidate_cache` is intentionally omitted — prompting before deleting an index is desirable.)
 
-**b) Add a `CLAUDE.md`** to each repo so Claude Code uses ironmunch instead of reading full files:
+Add a `CLAUDE.md` to each indexed repo so Claude Code prefers codesight-mcp over reading full files:
 
 ```markdown
 ## Code Navigation
 
-This repo is indexed in ironmunch. Use ironmunch MCP tools for code
+This repo is indexed in codesight-mcp. Use codesight-mcp MCP tools for code
 exploration instead of reading full files:
 
 - `search_symbols` — find functions/classes/types by name or description
 - `get_file_outline` — all symbols in a file with signatures
 - `get_symbol` — full source of a specific symbol
 - `get_repo_outline` — directory structure and language breakdown
-- `search_text` — full-text search across indexed files (requires `confirm_sensitive_search=True`; runs on redacted content)
+- `get_callers` / `get_callees` — call graph navigation
+- `get_call_chain` — trace execution paths between two symbols
+- `get_impact` — see what's affected by changing a symbol
 
 Use `Read` only for content that isn't a named symbol (config files, etc).
 ```
 
-Claude Code loads `CLAUDE.md` automatically at the start of every session.
+---
 
-**Step 4: Explore the codebase.**
+## Tools
 
-Once indexed, the AI will use `get_repo_outline`, `search_symbols`, and `get_symbol` to navigate efficiently -- retrieving only the symbols it needs instead of entire files.
+codesight-mcp exposes **17 MCP tools** organized into four categories:
 
-**Step 5 (optional): Install git hooks for automatic reindexing.**
+### Indexing
 
-See [Git Hooks](#git-hooks-auto-reindex-on-commit-and-push) below.
+| Tool | Description |
+|------|-------------|
+| `index_repo` | Index a GitHub repository (fetch, parse ASTs, extract symbols) |
+| `index_folder` | Index a local folder (walk, parse ASTs, extract symbols) |
+| `list_repos` | List all indexed repositories |
+| `invalidate_cache` | Delete an index to force full re-index |
+
+### Navigation
+
+| Tool | Description |
+|------|-------------|
+| `get_repo_outline` | High-level overview: directories, file counts, language breakdown |
+| `get_file_tree` | File tree of an indexed repo, optionally filtered by path prefix |
+| `get_file_outline` | All symbols in a file with signatures and summaries |
+| `get_symbol` | Full source code of a specific symbol (byte-offset retrieval) |
+| `get_symbols` | Batch retrieval of multiple symbols in one call |
+
+### Search
+
+| Tool | Description |
+|------|-------------|
+| `search_symbols` | Search symbols by name, signature, summary, or docstring |
+| `search_text` | Full-text search across indexed files (matches against redacted content; requires `confirm_sensitive_search=True`) |
+
+### Code Graph
+
+| Tool | Description |
+|------|-------------|
+| `get_callers` | Find all functions that call a given symbol |
+| `get_callees` | Find all functions called by a given symbol |
+| `get_call_chain` | Trace the execution path between two symbols (BFS with cycle detection) |
+| `get_type_hierarchy` | Show inheritance tree — parents and children of a class |
+| `get_imports` | Show import relationships for a file or symbol |
+| `get_impact` | Impact analysis — everything affected downstream of a change |
+
+---
+
+## Natural Language Examples
+
+Once indexed, interact through your AI assistant using plain English:
+
+### Finding Code
+- *"Where is the `process_payment` function?"*
+- *"Show me all classes related to authentication"*
+- *"Find any code that handles database connections"*
+
+### Understanding Relationships
+- *"What functions call `validate_input`?"*
+- *"What does `initialize_system` call?"*
+- *"Show me the full call chain from `main` to `process_data`"*
+- *"What's the inheritance hierarchy for `BaseController`?"*
+
+### Impact Analysis
+- *"If I change `calculate_tax`, what else is affected?"*
+- *"Which files import the `utils` module?"*
+- *"Show me everything downstream of `authenticate_user`"*
+
+### Exploring Structure
+- *"Give me an overview of this repository"*
+- *"What symbols are in `src/server.py`?"*
+- *"List all indexed repos"*
+
+---
+
+## Code Graph & Relationship Analysis
+
+codesight-mcp builds an in-memory code graph from relationships extracted during AST parsing. No external graph database is required — the graph uses dict-of-sets adjacency lists, constructed at query time from the symbol index.
+
+**How it works:**
+
+1. During indexing, the AST parser extracts `calls`, `imports`, and `inherits_from` relationships for each symbol
+2. These relationships are stored alongside symbol metadata in the JSON index
+3. At query time, `CodeGraph.build(symbols)` constructs the graph from symbol dicts
+4. Graph tools (callers, callees, call chains, impact) traverse this structure using BFS with cycle detection
+
+**Compared to CodeGraphContext:** codesight-mcp uses no external database (FalkorDB/Neo4j). The trade-off is simplicity and zero-config vs. the ability to handle massive graphs. For most projects (thousands of files), the in-memory approach is fast and sufficient.
+
+---
 
 ## Git Hooks: Auto-Reindex on Commit and Push
 
-ironmunch includes two git hooks that keep indexes current automatically:
+codesight-mcp includes git hooks that keep indexes current automatically:
 
 | Hook | Trigger | Updates |
 |------|---------|---------|
@@ -119,8 +280,8 @@ ironmunch includes two git hooks that keep indexes current automatically:
 **Install in any repo:**
 
 ```bash
-cp /path/to/ironmunch/hooks/post-commit .git/hooks/post-commit
-cp /path/to/ironmunch/hooks/post-push   .git/hooks/post-push
+cp /path/to/codesight-mcp/hooks/post-commit .git/hooks/post-commit
+cp /path/to/codesight-mcp/hooks/post-push   .git/hooks/post-push
 chmod +x .git/hooks/post-commit .git/hooks/post-push
 ```
 
@@ -129,48 +290,39 @@ Both hooks run in the background so they never block your workflow. Remove `--no
 **One-time setup** — git hooks don't inherit your shell environment, so credentials and the binary path must be provided separately:
 
 ```bash
-mkdir -p ~/.config/ironmunch
-cat > ~/.config/ironmunch/env <<'EOF'
+mkdir -p ~/.config/codesight-mcp
+cat > ~/.config/codesight-mcp/env <<'EOF'
 export GITHUB_TOKEN=ghp_...
-export IRONMUNCH_BIN=/path/to/.venv/bin/ironmunch
+export IRONMUNCH_BIN=/path/to/.venv/bin/codesight-mcp
 EOF
-chmod 600 ~/.config/ironmunch/env
+chmod 600 ~/.config/codesight-mcp/env
 ```
 
-`IRONMUNCH_BIN` must point to the same binary your MCP client uses. Without it, the hooks may resolve to a version manager shim (e.g. pyenv) that doesn't have the module installed.
-
-You can also call the indexer directly from the command line:
+You can also index directly from the command line:
 
 ```bash
-ironmunch index ~/src/myproject              # index a local folder
-ironmunch index ~/src/myproject --no-ai     # skip AI summaries (faster)
-ironmunch index-repo owner/myproject        # index a GitHub repo
-ironmunch index-repo owner/myproject --no-ai
+codesight-mcp index ~/src/myproject              # index a local folder
+codesight-mcp index ~/src/myproject --no-ai     # skip AI summaries (faster)
+codesight-mcp index-repo owner/myproject        # index a GitHub repo
 ```
+
+---
 
 ## Security Model
 
-ironmunch treats the connected AI as an untrusted principal. Every tool argument is validated before use. Every file path from the index is re-validated at retrieval time. Error messages are sanitized so system paths never leak.
+codesight-mcp treats the connected AI as an untrusted principal. Every tool argument is validated before use. Every file path from the index is re-validated at retrieval time. Error messages are sanitized so system paths never leak.
+
+| Layer | Defense |
+|-------|---------|
+| **Path validation** | 6-step chain: null bytes, traversal, length limits, resolution, containment, symlink checks |
+| **Content boundaries** | Microsoft-style spotlighting markers to resist indirect prompt injection |
+| **Error sanitization** | No raw exceptions or system paths in tool responses |
+| **Allowed roots** | `IRONMUNCH_ALLOWED_ROOTS` restricts which directories can be indexed |
+| **Secret redaction** | Secrets in function bodies are redacted from API output (stored at rest in `~/.code-index/`) |
 
 See [SECURITY.md](SECURITY.md) for the full threat model, defense matrix, and validation chain details.
 
-## Tools
-
-ironmunch exposes 11 MCP tools:
-
-| Tool | Description |
-|------|-------------|
-| `index_repo` | Index a GitHub repository (fetch, parse ASTs, extract symbols) |
-| `index_folder` | Index a local folder (walk, parse ASTs, extract symbols) |
-| `list_repos` | List all indexed repositories |
-| `get_repo_outline` | High-level overview: directories, file counts, language breakdown |
-| `get_file_tree` | File tree of an indexed repository, optionally filtered by path prefix |
-| `get_file_outline` | All symbols in a file with signatures and summaries |
-| `get_symbol` | Full source code of a specific symbol (byte-offset retrieval) |
-| `get_symbols` | Batch retrieval of multiple symbols in one call |
-| `search_symbols` | Search symbols by name, signature, summary, or docstring |
-| `search_text` | Full-text search across indexed file contents; requires `confirm_sensitive_search=True` and matches against redacted content |
-| `invalidate_cache` | Delete an index to force full re-index |
+---
 
 ## Environment Variables
 
@@ -181,10 +333,12 @@ ironmunch exposes 11 MCP tools:
 | `ANTHROPIC_API_KEY` | Anthropic API key for AI-generated symbol summaries. Optional — falls back to docstrings if unset. |
 | `CODE_INDEX_PATH` | Custom storage directory for indexes. Default: `~/.code-index/` |
 
+---
+
 ## Attribution
 
 Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gravelle. Security hardening inspired by [basalt-mcp](https://github.com/cmillstead/basalt-mcp).
 
 ## License
 
-MIT -- see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

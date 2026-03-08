@@ -4,8 +4,8 @@ import json
 import tempfile
 from pathlib import Path
 import pytest
-from ironmunch.storage.index_store import IndexStore
-from ironmunch.tools.invalidate_cache import invalidate_cache
+from codesight_mcp.storage.index_store import IndexStore
+from codesight_mcp.tools.invalidate_cache import invalidate_cache
 
 
 def _make_store_with_repo(storage_path: str) -> None:
@@ -53,7 +53,7 @@ def test_invalidate_cache_removes_content_dir(tmp_path):
 
 def test_invalidate_cache_without_confirm_raises_validation_error(tmp_path):
     """ADV-MED-13: invalidate_cache without confirm=True must raise ValidationError."""
-    from ironmunch.core.validation import ValidationError
+    from codesight_mcp.core.validation import ValidationError
     _make_store_with_repo(str(tmp_path))
     with pytest.raises(ValidationError, match="confirm=True"):
         invalidate_cache("test/repo", storage_path=str(tmp_path))

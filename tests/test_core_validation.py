@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ironmunch.core.validation import (
+from codesight_mcp.core.validation import (
     assert_no_null_bytes,
     assert_no_control_chars,
     assert_safe_segments,
@@ -34,7 +34,7 @@ class TestAssertNoNullBytes:
 
 class TestAssertSafeSegments:
     def test_clean_path(self):
-        assert_safe_segments("src/ironmunch/core/validation.py")
+        assert_safe_segments("src/codesight_mcp/core/validation.py")
 
     def test_dot_dot_rejects(self):
         with pytest.raises(ValidationError, match="unsafe segment"):
@@ -58,7 +58,7 @@ class TestAssertSafeSegments:
 
 class TestAssertPathLimits:
     def test_normal_path(self):
-        assert_path_limits("src/ironmunch/core/validation.py")
+        assert_path_limits("src/codesight_mcp/core/validation.py")
 
     def test_too_long(self):
         long_path = "a/" * 300
@@ -146,27 +146,27 @@ class TestAssertNoControlChars:
     """ADV-LOW-4: assert_no_control_chars rejects all control characters."""
 
     def test_clean_path(self):
-        from ironmunch.core.validation import assert_no_control_chars
+        from codesight_mcp.core.validation import assert_no_control_chars
         assert_no_control_chars("src/main.py")  # no error
 
     def test_null_byte_rejected(self):
-        from ironmunch.core.validation import assert_no_control_chars
+        from codesight_mcp.core.validation import assert_no_control_chars
         with pytest.raises(ValidationError, match="control character"):
             assert_no_control_chars("src/main.py\x00.txt")
 
     def test_x01_rejected(self):
-        from ironmunch.core.validation import assert_no_control_chars
+        from codesight_mcp.core.validation import assert_no_control_chars
         with pytest.raises(ValidationError, match="control character"):
             assert_no_control_chars("src/\x01main.py")
 
     def test_x1f_rejected(self):
-        from ironmunch.core.validation import assert_no_control_chars
+        from codesight_mcp.core.validation import assert_no_control_chars
         with pytest.raises(ValidationError, match="control character"):
             assert_no_control_chars("src/\x1fmain.py")
 
     def test_space_allowed(self):
         """Space (0x20) is NOT a control character and must be allowed."""
-        from ironmunch.core.validation import assert_no_control_chars
+        from codesight_mcp.core.validation import assert_no_control_chars
         assert_no_control_chars("src/my file.py")  # no error
 
 
@@ -176,8 +176,8 @@ class TestParseRepoMalformedField:
     def test_malformed_repo_field_raises(self):
         """A stored index entry whose repo field lacks a slash raises RepoNotFoundError."""
         from unittest.mock import patch, MagicMock
-        from ironmunch.tools._common import parse_repo
-        from ironmunch.core.errors import RepoNotFoundError
+        from codesight_mcp.tools._common import parse_repo
+        from codesight_mcp.core.errors import RepoNotFoundError
 
         # The mock must return an entry whose "repo" field ends with "/nodash"
         # (so it matches the search) but contains no slash (to trigger the
@@ -199,19 +199,19 @@ class TestParseRepoMalformedField:
                 return True  # Always match so this entry is selected
         fake_store.list_repos.return_value = [{"repo": NoSlashStr("nodash")}]
 
-        with patch("ironmunch.tools._common.IndexStore", return_value=fake_store):
+        with patch("codesight_mcp.tools._common.IndexStore", return_value=fake_store):
             with pytest.raises(RepoNotFoundError, match="Malformed repository identifier"):
                 parse_repo("nodash", storage_path="/tmp/fake")
 
     def test_valid_repo_field_parses(self):
         """A stored index entry with repo='owner/name' must parse successfully."""
         from unittest.mock import patch, MagicMock
-        from ironmunch.tools._common import parse_repo
+        from codesight_mcp.tools._common import parse_repo
 
         fake_store = MagicMock()
         fake_store.list_repos.return_value = [{"repo": "owner/myrepo"}]
 
-        with patch("ironmunch.tools._common.IndexStore", return_value=fake_store):
+        with patch("codesight_mcp.tools._common.IndexStore", return_value=fake_store):
             owner, name = parse_repo("myrepo", storage_path="/tmp/fake")
             assert owner == "owner"
             assert name == "myrepo"

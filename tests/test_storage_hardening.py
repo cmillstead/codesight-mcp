@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from ironmunch.storage.index_store import IndexStore
-from ironmunch.core.validation import ValidationError
+from codesight_mcp.storage.index_store import IndexStore
+from codesight_mcp.core.validation import ValidationError
 
 
 class TestIdentifierSanitization:
@@ -65,7 +65,7 @@ class TestIndexSizeValidation:
                 data = json.load(f)
 
             # Pad with junk to exceed 50 MB
-            from ironmunch.core.limits import MAX_INDEX_SIZE
+            from codesight_mcp.core.limits import MAX_INDEX_SIZE
             data["_pad"] = "x" * (MAX_INDEX_SIZE + 1)
             with open(index_path, "w") as f:
                 json.dump(data, f)

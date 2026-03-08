@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from ironmunch.tools.index_repo import index_repo
+from codesight_mcp.tools.index_repo import index_repo
 
 
 def _make_http_status_error(status_code: int) -> httpx.HTTPStatusError:
@@ -25,7 +25,7 @@ def test_index_repo_404_returns_error():
     error = _make_http_status_error(404)
 
     with patch(
-        "ironmunch.tools.index_repo.fetch_repo_tree",
+        "codesight_mcp.tools.index_repo.fetch_repo_tree",
         new=AsyncMock(side_effect=error),
     ):
         result = asyncio.run(
@@ -45,7 +45,7 @@ def test_index_repo_403_returns_error():
     error = _make_http_status_error(403)
 
     with patch(
-        "ironmunch.tools.index_repo.fetch_repo_tree",
+        "codesight_mcp.tools.index_repo.fetch_repo_tree",
         new=AsyncMock(side_effect=error),
     ):
         result = asyncio.run(

@@ -2,9 +2,9 @@
 
 import pytest
 
-from ironmunch.storage import IndexStore, CodeIndex
-from ironmunch.parser import Symbol
-from ironmunch.tools.get_repo_outline import get_repo_outline
+from codesight_mcp.storage import IndexStore, CodeIndex
+from codesight_mcp.parser import Symbol
+from codesight_mcp.tools.get_repo_outline import get_repo_outline
 
 
 def _make_store_with_index(

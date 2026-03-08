@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from ironmunch.discovery import discover_local_files
-from ironmunch.core.limits import MAX_DIRECTORY_DEPTH
+from codesight_mcp.discovery import discover_local_files
+from codesight_mcp.core.limits import MAX_DIRECTORY_DEPTH
 
 
 class TestDiscoveryDepthLimit:

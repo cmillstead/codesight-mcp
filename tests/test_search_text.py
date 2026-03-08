@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from ironmunch.storage import IndexStore
-from ironmunch.parser.symbols import Symbol
-from ironmunch.tools.search_text import search_text
+from codesight_mcp.storage import IndexStore
+from codesight_mcp.parser.symbols import Symbol
+from codesight_mcp.tools.search_text import search_text
 
 
 def _make_store_with_file(

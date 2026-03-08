@@ -2,7 +2,7 @@
 
 import re
 
-from ironmunch.core.boundaries import wrap_untrusted_content, make_meta
+from codesight_mcp.core.boundaries import wrap_untrusted_content, make_meta
 
 
 def test_wrap_produces_markers():

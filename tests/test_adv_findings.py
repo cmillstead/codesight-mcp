@@ -8,13 +8,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ironmunch.discovery import _RedactAuthFilter
-from ironmunch.tools.search_symbols import search_symbols
-from ironmunch.tools.index_folder import index_folder
-from ironmunch.tools.index_repo import index_repo
-from ironmunch.tools.get_symbol import get_symbol
-from ironmunch.storage.index_store import IndexStore
-from ironmunch.parser.symbols import Symbol
+from codesight_mcp.discovery import _RedactAuthFilter
+from codesight_mcp.tools.search_symbols import search_symbols
+from codesight_mcp.tools.index_folder import index_folder
+from codesight_mcp.tools.index_repo import index_repo
+from codesight_mcp.tools.get_symbol import get_symbol
+from codesight_mcp.storage.index_store import IndexStore
+from codesight_mcp.parser.symbols import Symbol
 
 
 # ---------------------------------------------------------------------------
@@ -158,12 +158,12 @@ class TestIndexFolderParsedWarningsNoPath:
         # Write a file that triggers a parse exception via monkeypatching
         (tmp_path / "bad.py").write_text("def broken():\n    pass\n")
 
-        with patch("ironmunch.tools.index_folder.parse_file") as mock_parse:
+        with patch("codesight_mcp.tools.index_folder.parse_file") as mock_parse:
             def side_effect(content, path, language):
                 if "bad.py" in path:
                     raise RuntimeError("simulated parse error")
                 # Return minimal symbol list for good file
-                from ironmunch.parser.symbols import Symbol
+                from codesight_mcp.parser.symbols import Symbol
                 return [Symbol(
                     id=f"{path}::ok#function",
                     file=path, name="ok", qualified_name="ok",
@@ -225,15 +225,15 @@ class TestIndexRepoParsedWarningsNoPath:
             return ""
 
         with (
-            patch("ironmunch.tools.index_repo.fetch_repo_tree", new=fake_fetch_tree),
-            patch("ironmunch.tools.index_repo.fetch_file_content", new=fake_fetch_file),
-            patch("ironmunch.tools.index_repo.fetch_gitignore", new=fake_fetch_gitignore),
-            patch("ironmunch.tools.index_repo.parse_file") as mock_parse,
-            patch("ironmunch.tools.index_repo.summarize_symbols", side_effect=lambda syms, use_ai: syms),
-            patch("ironmunch.tools.index_repo.IndexStore") as mock_store_cls,
+            patch("codesight_mcp.tools.index_repo.fetch_repo_tree", new=fake_fetch_tree),
+            patch("codesight_mcp.tools.index_repo.fetch_file_content", new=fake_fetch_file),
+            patch("codesight_mcp.tools.index_repo.fetch_gitignore", new=fake_fetch_gitignore),
+            patch("codesight_mcp.tools.index_repo.parse_file") as mock_parse,
+            patch("codesight_mcp.tools.index_repo.summarize_symbols", side_effect=lambda syms, use_ai: syms),
+            patch("codesight_mcp.tools.index_repo.IndexStore") as mock_store_cls,
         ):
             # Make parse raise for bad.py, succeed for good.py
-            from ironmunch.parser.symbols import Symbol
+            from codesight_mcp.parser.symbols import Symbol
             def side_effect(content, path, language):
                 if "bad.py" in path:
                     raise RuntimeError("simulated parse error")
@@ -356,7 +356,7 @@ class TestGetSymbolContextOSError:
             _make_store(tmp)
 
             with patch(
-                "ironmunch.tools.get_symbol.safe_read_file",
+                "codesight_mcp.tools.get_symbol.safe_read_file",
                 side_effect=OSError("simulated disk error"),
             ):
                 result = get_symbol(
@@ -386,7 +386,7 @@ class TestGetSymbolContextOSError:
             _make_store(tmp)
 
             with patch(
-                "ironmunch.tools.get_symbol.safe_read_file",
+                "codesight_mcp.tools.get_symbol.safe_read_file",
                 side_effect=IOError("simulated io error"),
             ):
                 result = get_symbol(

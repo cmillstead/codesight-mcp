@@ -1,6 +1,6 @@
 """Tests for resource limit constants."""
 
-from ironmunch.core.limits import (
+from codesight_mcp.core.limits import (
     MAX_FILE_SIZE,
     MAX_FILE_COUNT,
     MAX_CONTEXT_LINES,

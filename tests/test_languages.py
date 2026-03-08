@@ -1,7 +1,7 @@
 """Tests for language-specific parsing."""
 
 import pytest
-from ironmunch.parser import parse_file
+from codesight_mcp.parser import parse_file
 
 
 JAVASCRIPT_SOURCE = '''

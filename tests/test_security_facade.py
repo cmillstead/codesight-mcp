@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ironmunch.security import (
+from codesight_mcp.security import (
     validate_file_access,
     safe_read_file,
     is_secret_file,
@@ -15,7 +15,7 @@ from ironmunch.security import (
     sanitize_repo_identifier,
     sanitize_signature_for_api,
 )
-from ironmunch.core.validation import ValidationError
+from codesight_mcp.core.validation import ValidationError
 
 
 class TestValidateFileAccess:
@@ -303,8 +303,8 @@ class TestContextLinesRedaction:
     def test_context_before_redacts_secret(self, tmp_path):
         """Secret on line before a function must be redacted in context_before."""
         import tempfile
-        from ironmunch.storage.index_store import IndexStore
-        from ironmunch.tools.get_symbol import get_symbol
+        from codesight_mcp.storage.index_store import IndexStore
+        from codesight_mcp.tools.get_symbol import get_symbol
 
         src = (
             'API_KEY = "sk_live_' + 'x' * 24 + '"\n'
@@ -316,7 +316,7 @@ class TestContextLinesRedaction:
 
         with tempfile.TemporaryDirectory() as storage:
             store = IndexStore(storage)
-            from ironmunch.parser import parse_file
+            from codesight_mcp.parser import parse_file
             symbols = parse_file(src, "sample.py", "python")
             func_symbols = [s for s in symbols if s.name == "my_func"]
             assert func_symbols, "my_func not parsed"
@@ -341,8 +341,8 @@ class TestContextLinesRedaction:
     def test_context_after_redacts_secret(self, tmp_path):
         """Secret on line after a function must be redacted in context_after."""
         import tempfile
-        from ironmunch.storage.index_store import IndexStore
-        from ironmunch.tools.get_symbol import get_symbol
+        from codesight_mcp.storage.index_store import IndexStore
+        from codesight_mcp.tools.get_symbol import get_symbol
 
         src = (
             "def my_func():\n"
@@ -354,7 +354,7 @@ class TestContextLinesRedaction:
 
         with tempfile.TemporaryDirectory() as storage:
             store = IndexStore(storage)
-            from ironmunch.parser import parse_file
+            from codesight_mcp.parser import parse_file
             symbols = parse_file(src, "sample2.py", "python")
             func_symbols = [s for s in symbols if s.name == "my_func"]
             assert func_symbols, "my_func not parsed"
@@ -383,8 +383,8 @@ class TestQueryEchoSanitization:
     def test_search_text_query_redacted(self, tmp_path):
         """search_text must not echo a secret token in the query field."""
         import tempfile
-        from ironmunch.storage.index_store import IndexStore
-        from ironmunch.tools.search_text import search_text
+        from codesight_mcp.storage.index_store import IndexStore
+        from codesight_mcp.tools.search_text import search_text
 
         src = "x = 1\n"
         with tempfile.TemporaryDirectory() as storage:
@@ -409,13 +409,13 @@ class TestQueryEchoSanitization:
     def test_search_symbols_query_redacted(self, tmp_path):
         """search_symbols must not echo a secret token in the query field."""
         import tempfile
-        from ironmunch.storage.index_store import IndexStore
-        from ironmunch.tools.search_symbols import search_symbols
+        from codesight_mcp.storage.index_store import IndexStore
+        from codesight_mcp.tools.search_symbols import search_symbols
 
         src = "def foo(): pass\n"
         with tempfile.TemporaryDirectory() as storage:
             store = IndexStore(storage)
-            from ironmunch.parser import parse_file
+            from codesight_mcp.parser import parse_file
             symbols = parse_file(src, "x.py", "python")
             store.save_index(
                 owner="local", name="qtest2",
@@ -436,9 +436,9 @@ class TestGetSymbolVerify:
     def test_verify_true_detects_hash_mismatch(self, tmp_path):
         """When the stored content_hash doesn't match re-read content, content_verified=False."""
         import tempfile
-        from ironmunch.storage.index_store import IndexStore
-        from ironmunch.tools.get_symbol import get_symbol
-        from ironmunch.parser import parse_file
+        from codesight_mcp.storage.index_store import IndexStore
+        from codesight_mcp.tools.get_symbol import get_symbol
+        from codesight_mcp.parser import parse_file
 
         src = "def my_func():\n    return 42\n"
 

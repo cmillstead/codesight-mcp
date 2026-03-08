@@ -25,6 +25,10 @@ class Symbol:
     byte_offset: int = 0           # Start byte in raw file
     byte_length: int = 0           # Byte length of full source
     content_hash: str = ""         # SHA-256 of symbol source bytes (for drift detection)
+    calls: list[str] = field(default_factory=list)        # Functions/methods this symbol calls (unresolved AST names)
+    imports: list[str] = field(default_factory=list)       # Module/file imports found in this file (file-level)
+    inherits_from: list[str] = field(default_factory=list) # Parent class/trait names (for classes)
+    implements: list[str] = field(default_factory=list)    # Interface/protocol names (where applicable)
 
 
 def make_symbol_id(file_path: str, qualified_name: str, kind: str = "") -> str:

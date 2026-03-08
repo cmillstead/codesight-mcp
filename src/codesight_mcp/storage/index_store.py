@@ -717,6 +717,10 @@ class IndexStore:
             "byte_offset": symbol.byte_offset,
             "byte_length": symbol.byte_length,
             "content_hash": symbol.content_hash,
+            "calls": symbol.calls,
+            "imports": symbol.imports,
+            "inherits_from": symbol.inherits_from,
+            "implements": symbol.implements,
         }
 
     def _index_to_dict(self, index: CodeIndex) -> dict:

@@ -4,8 +4,8 @@ import pytest
 import json
 from pathlib import Path
 
-from ironmunch.storage import IndexStore, CodeIndex
-from ironmunch.parser import Symbol
+from codesight_mcp.storage import IndexStore, CodeIndex
+from codesight_mcp.parser import Symbol
 
 
 def test_save_and_load_index(tmp_path):
@@ -173,8 +173,8 @@ def test_codeindex_search():
 
 def test_get_symbol_docstring_wrapped_as_untrusted(tmp_path):
     """SEC-LOW-7: get_symbol should wrap docstring with wrap_untrusted_content."""
-    from ironmunch.parser import Symbol
-    from ironmunch.tools.get_symbol import get_symbol
+    from codesight_mcp.parser import Symbol
+    from codesight_mcp.tools.get_symbol import get_symbol
 
     store = IndexStore(base_path=str(tmp_path))
     content = 'def foo():\n    """This is the docstring."""\n    pass\n'
@@ -213,8 +213,8 @@ def test_get_symbol_docstring_wrapped_as_untrusted(tmp_path):
 
 def test_get_symbol_signature_wrapped_as_untrusted(tmp_path):
     """SEC-MED-2 followup: get_symbol should wrap signature with wrap_untrusted_content."""
-    from ironmunch.parser import Symbol
-    from ironmunch.tools.get_symbol import get_symbol
+    from codesight_mcp.parser import Symbol
+    from codesight_mcp.tools.get_symbol import get_symbol
 
     store = IndexStore(base_path=str(tmp_path))
     content = 'def bar(x: int) -> str:\n    pass\n'
@@ -251,8 +251,8 @@ def test_get_symbol_signature_wrapped_as_untrusted(tmp_path):
 
 def test_get_symbols_signature_wrapped_as_untrusted(tmp_path):
     """SEC-MED-2 followup: get_symbols should wrap signature with wrap_untrusted_content."""
-    from ironmunch.parser import Symbol
-    from ironmunch.tools.get_symbol import get_symbols
+    from codesight_mcp.parser import Symbol
+    from codesight_mcp.tools.get_symbol import get_symbols
 
     store = IndexStore(base_path=str(tmp_path))
     content = 'def baz(y: str) -> int:\n    pass\n'
@@ -291,8 +291,8 @@ def test_get_symbols_signature_wrapped_as_untrusted(tmp_path):
 
 def test_get_file_outline_signature_wrapped_as_untrusted(tmp_path):
     """SEC-MED-2: get_file_outline should wrap signature and summary with wrap_untrusted_content."""
-    from ironmunch.parser import Symbol
-    from ironmunch.tools.get_file_outline import get_file_outline
+    from codesight_mcp.parser import Symbol
+    from codesight_mcp.tools.get_file_outline import get_file_outline
 
     store = IndexStore(base_path=str(tmp_path))
     content = 'def bar(x: int) -> str:\n    """Return bar."""\n    return str(x)\n'
@@ -335,8 +335,8 @@ def test_get_file_outline_signature_wrapped_as_untrusted(tmp_path):
 
 def test_search_symbols_signature_wrapped_as_untrusted(tmp_path):
     """SEC-MED-2: search_symbols should wrap signature and summary with wrap_untrusted_content."""
-    from ironmunch.parser import Symbol
-    from ironmunch.tools.search_symbols import search_symbols
+    from codesight_mcp.parser import Symbol
+    from codesight_mcp.tools.search_symbols import search_symbols
 
     store = IndexStore(base_path=str(tmp_path))
     content = 'def baz(y: str) -> int:\n    """Return baz."""\n    return int(y)\n'

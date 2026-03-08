@@ -1,4 +1,4 @@
-"""Resource limit constants for ironmunch.
+"""Resource limit constants for codesight-mcp.
 
 All limits enforced server-side. Changing these values affects security posture.
 """

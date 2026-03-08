@@ -2,11 +2,11 @@
 
 import errno
 
-from ironmunch.core.errors import sanitize_error, strip_system_paths
+from codesight_mcp.core.errors import sanitize_error, strip_system_paths
 
 
 def test_validation_error_passes_through():
-    from ironmunch.core.validation import ValidationError
+    from codesight_mcp.core.validation import ValidationError
     err = ValidationError("Path contains null byte")
     msg = sanitize_error(err)
     assert msg == "Path contains null byte"
@@ -56,7 +56,7 @@ def test_path_stripping():
 
 def test_validation_error_truncated_at_200_chars():
     """SEC-LOW-4: ValidationError messages must be capped at 200 characters."""
-    from ironmunch.core.validation import ValidationError
+    from codesight_mcp.core.validation import ValidationError
     err = ValidationError("A" * 500)
     msg = sanitize_error(err)
     assert len(msg) <= 200
@@ -64,8 +64,8 @@ def test_validation_error_truncated_at_200_chars():
 
 def test_validation_error_path_stripped():
     """SEC-LOW-14: ValidationError messages must have filesystem paths stripped."""
-    from ironmunch.core.errors import sanitize_error
-    from ironmunch.core.validation import ValidationError
+    from codesight_mcp.core.errors import sanitize_error
+    from codesight_mcp.core.validation import ValidationError
     err = ValidationError("Not allowed: /Users/cevin/secret-project/config.py")
     msg = sanitize_error(err)
     assert "/Users/cevin" not in msg, f"Path leaked in sanitized error: {msg!r}"

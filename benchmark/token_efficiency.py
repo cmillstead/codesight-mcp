@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ironmunch vs jCodeMunch — Token Efficiency Benchmark
+codesight-mcp vs jCodeMunch — Token Efficiency Benchmark
 
 Indexes a target codebase with each tool (into a temp dir), runs a set of
 representative queries, and compares how many tokens each tool uses to answer
@@ -29,7 +29,7 @@ def count_tokens(text: str) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Spotlighting wrapper stripper (ironmunch only)
+# Spotlighting wrapper stripper (codesight-mcp only)
 # ---------------------------------------------------------------------------
 _WRAPPER = re.compile(
     r"<<<UNTRUSTED_CODE_[0-9a-f]+>>>(.*?)<<<END_UNTRUSTED_CODE_[0-9a-f]+>>>",
@@ -38,7 +38,7 @@ _WRAPPER = re.compile(
 
 
 def unwrap(s: str) -> str:
-    """Strip ironmunch spotlighting boundary markers from a string."""
+    """Strip codesight-mcp spotlighting boundary markers from a string."""
     m = _WRAPPER.search(s)
     return m.group(1).strip() if m else s
 
@@ -71,12 +71,12 @@ def count_baseline_tokens(target: Path) -> tuple[int, int, int]:
 
 
 # ---------------------------------------------------------------------------
-# ironmunch imports
+# codesight-mcp imports
 # ---------------------------------------------------------------------------
 try:
-    from ironmunch.tools.index_folder import index_folder as im_index_folder
-    from ironmunch.tools.search_symbols import search_symbols as im_search
-    from ironmunch.tools.get_symbol import get_symbols as im_get_symbols
+    from codesight_mcp.tools.index_folder import index_folder as im_index_folder
+    from codesight_mcp.tools.search_symbols import search_symbols as im_search
+    from codesight_mcp.tools.get_symbol import get_symbols as im_get_symbols
 
     IRONMUNCH_AVAILABLE = True
 except ImportError:
@@ -120,10 +120,10 @@ def _supports_param(fn, param: str) -> bool:
         return False
 
 
-def run_ironmunch(target: Path, queries: list[str], top_k: int) -> list[int]:
-    """Index target with ironmunch, run queries, return token counts per query."""
+def run_codesight_mcp(target: Path, queries: list[str], top_k: int) -> list[int]:
+    """Index target with codesight-mcp, run queries, return token counts per query."""
     if not IRONMUNCH_AVAILABLE:
-        raise RuntimeError("ironmunch not importable")
+        raise RuntimeError("codesight-mcp not importable")
 
     with tempfile.TemporaryDirectory(prefix="im_bench_") as tmp:
         kwargs: dict = dict(
@@ -210,7 +210,7 @@ def print_table(
     header_parts = [f"{'Query':<{q_width}}"]
     sep_parts = ["-" * q_width]
     if im_counts is not None:
-        header_parts.append(f"{'ironmunch':>{col_w}}")
+        header_parts.append(f"{'codesight-mcp':>{col_w}}")
         sep_parts.append("-" * col_w)
     if jcm_counts is not None:
         header_parts.append(f"{'jCodeMunch':>{col_w}}")
@@ -219,7 +219,7 @@ def print_table(
     sep_parts.append("-" * col_w)
 
     print()
-    print("ironmunch vs jCodeMunch — Token Efficiency Benchmark")
+    print("codesight-mcp vs jCodeMunch — Token Efficiency Benchmark")
     print("=" * 57)
     print(f"Target:      {target}  ({file_count} files, {loc:,} LOC)")
     print(f"Baseline:    ~{baseline:,} tokens (char/4 estimate, reading all source files)")
@@ -255,7 +255,7 @@ def print_table(
     print("Reduction vs baseline:")
     if im_counts is not None:
         avg_im = sum(im_counts) // len(im_counts)
-        print(f"  ironmunch:  {reduction_pct(baseline, avg_im)}  ({multiplier(baseline, avg_im)} fewer tokens)")
+        print(f"  codesight-mcp:  {reduction_pct(baseline, avg_im)}  ({multiplier(baseline, avg_im)} fewer tokens)")
     if jcm_counts is not None:
         avg_jcm = sum(jcm_counts) // len(jcm_counts)
         print(f"  jCodeMunch: {reduction_pct(baseline, avg_jcm)}  ({multiplier(baseline, avg_jcm)} fewer tokens)")
@@ -265,8 +265,8 @@ def print_table(
         avg_jcm = sum(jcm_counts) // len(jcm_counts)
         overhead = avg_im - avg_jcm
         print()
-        print(f"Token overhead from ironmunch security features (spotlighting): +{overhead:,} tokens avg per query")
-        print("Note: ironmunch wraps all untrusted fields in boundary markers for prompt injection defense.")
+        print(f"Token overhead from codesight-mcp security features (spotlighting): +{overhead:,} tokens avg per query")
+        print("Note: codesight-mcp wraps all untrusted fields in boundary markers for prompt injection defense.")
         print("      jCodeMunch does not apply spotlighting. This accounts for the difference.")
 
     print()
@@ -297,19 +297,19 @@ def print_json(
         "queries": [
             {
                 "query": q,
-                "ironmunch_tokens": im_counts[i] if im_counts else None,
+                "codesight_mcp_tokens": im_counts[i] if im_counts else None,
                 "jcodemunch_tokens": jcm_counts[i] if jcm_counts else None,
                 "baseline_tokens": baseline,
             }
             for i, q in enumerate(queries)
         ],
         "averages": {
-            "ironmunch": avg_im,
+            "codesight-mcp": avg_im,
             "jcodemunch": avg_jcm,
             "baseline": baseline,
         },
         "reduction_pct": {
-            "ironmunch": round((1 - avg_im / baseline) * 100, 1) if avg_im and baseline else None,
+            "codesight-mcp": round((1 - avg_im / baseline) * 100, 1) if avg_im and baseline else None,
             "jcodemunch": round((1 - avg_jcm / baseline) * 100, 1) if avg_jcm and baseline else None,
         },
     }
@@ -321,16 +321,16 @@ def print_json(
 # ---------------------------------------------------------------------------
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Token efficiency benchmark: ironmunch vs jCodeMunch"
+        description="Token efficiency benchmark: codesight-mcp vs jCodeMunch"
     )
     parser.add_argument(
         "--target",
-        default=str(Path(__file__).parent.parent / "src" / "ironmunch"),
-        help="Path to codebase to index (default: src/ironmunch/)",
+        default=str(Path(__file__).parent.parent / "src" / "codesight-mcp"),
+        help="Path to codebase to index (default: src/codesight_mcp/)",
     )
     parser.add_argument(
         "--tool",
-        choices=["ironmunch", "jcodemunch", "both"],
+        choices=["codesight-mcp", "jcodemunch", "both"],
         default="both",
         help="Which tool(s) to benchmark (default: both)",
     )
@@ -353,11 +353,11 @@ def main() -> None:
         print(f"Error: target path does not exist: {target}", file=sys.stderr)
         sys.exit(1)
 
-    run_im = args.tool in ("ironmunch", "both")
+    run_im = args.tool in ("codesight-mcp", "both")
     run_jcm = args.tool in ("jcodemunch", "both")
 
     if run_im and not IRONMUNCH_AVAILABLE:
-        print("Error: ironmunch is not installed/importable.", file=sys.stderr)
+        print("Error: codesight-mcp is not installed/importable.", file=sys.stderr)
         sys.exit(1)
 
     if run_jcm and not JCODEMUNCH_AVAILABLE:
@@ -368,7 +368,7 @@ def main() -> None:
         )
         if args.tool == "jcodemunch":
             sys.exit(1)
-        print("Falling back to ironmunch-only mode.\n", file=sys.stderr)
+        print("Falling back to codesight-mcp-only mode.\n", file=sys.stderr)
         run_jcm = False
 
     print(f"Measuring baseline (reading all source files under {target})...", file=sys.stderr)
@@ -378,8 +378,8 @@ def main() -> None:
     jcm_counts: Optional[list[int]] = None
 
     if run_im:
-        print("Indexing with ironmunch and running queries...", file=sys.stderr)
-        im_counts = run_ironmunch(target, QUERIES, args.top_k)
+        print("Indexing with codesight-mcp and running queries...", file=sys.stderr)
+        im_counts = run_codesight_mcp(target, QUERIES, args.top_k)
 
     if run_jcm:
         print("Indexing with jCodeMunch and running queries...", file=sys.stderr)

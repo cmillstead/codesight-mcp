@@ -3,8 +3,8 @@
 import tempfile
 from pathlib import Path
 
-from ironmunch.storage.index_store import IndexStore
-from ironmunch.tools.index_folder import index_folder
+from codesight_mcp.storage.index_store import IndexStore
+from codesight_mcp.tools.index_folder import index_folder
 
 
 def test_no_source_files_returns_no_symbols(tmp_path):

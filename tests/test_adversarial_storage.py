@@ -17,9 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from ironmunch.storage.index_store import IndexStore, CodeIndex
-from ironmunch.core.limits import MAX_FILE_SIZE
-from ironmunch.core.validation import ValidationError
+from codesight_mcp.storage.index_store import IndexStore, CodeIndex
+from codesight_mcp.core.limits import MAX_FILE_SIZE
+from codesight_mcp.core.validation import ValidationError
 
 
 def _make_poisoned_index(
@@ -249,7 +249,7 @@ class TestSaveIndexPathTraversal:
     def test_traversal_in_raw_files_blocked(self):
         """raw_files with '../../evil.py' must not write outside content dir."""
         with tempfile.TemporaryDirectory() as tmp:
-            from ironmunch.parser.symbols import Symbol
+            from codesight_mcp.parser.symbols import Symbol
             traversal_path = "../../evil.py"
             symbols = [Symbol(
                 id=f"{traversal_path}::main#function",
@@ -273,8 +273,8 @@ class TestSaveIndexPathTraversal:
     def test_absolute_path_in_raw_files_blocked(self):
         """raw_files with absolute path must not write outside content dir."""
         with tempfile.TemporaryDirectory() as tmp:
-            from ironmunch.parser.symbols import Symbol
-            abs_path = os.path.join(tempfile.gettempdir(), "ironmunch_evil_test_12345.py")
+            from codesight_mcp.parser.symbols import Symbol
+            abs_path = os.path.join(tempfile.gettempdir(), "codesight_mcp_evil_test_12345.py")
             symbols = [Symbol(
                 id=f"{abs_path}::main#function",
                 file=abs_path, name="main", qualified_name="main",
@@ -295,7 +295,7 @@ class TestSaveIndexPathTraversal:
     def test_traversal_in_incremental_save_blocked(self):
         """incremental_save with traversal path must not write outside content dir."""
         with tempfile.TemporaryDirectory() as tmp:
-            from ironmunch.parser.symbols import Symbol
+            from codesight_mcp.parser.symbols import Symbol
             # First create a valid index to update
             safe_sym = Symbol(
                 id="safe.py::safe#function",
@@ -373,7 +373,7 @@ class TestSafeWriteContentSymlink:
     def test_temp_file_permissions(self):
         """Temp files created during save_index should have 0o600 permissions."""
         with tempfile.TemporaryDirectory() as tmp:
-            from ironmunch.parser.symbols import Symbol
+            from codesight_mcp.parser.symbols import Symbol
             sym = Symbol(
                 id="test.py::foo#function",
                 file="test.py", name="foo", qualified_name="foo",
@@ -474,8 +474,8 @@ class TestSearchTextSecretRedaction:
 
     def test_secret_value_redacted_in_results(self):
         """Matching lines containing hardcoded secrets must have secret value redacted."""
-        from ironmunch.tools.search_text import search_text
-        from ironmunch.parser.symbols import Symbol
+        from codesight_mcp.tools.search_text import search_text
+        from codesight_mcp.parser.symbols import Symbol
 
         # sk- + 20 chars meets the _INLINE_SECRET_RE threshold of 20 chars after 'sk-'
         # Use SK_KEY (not in the api_key= pattern list) so the variable name survives
@@ -527,8 +527,8 @@ class TestSearchTextSecretRedaction:
 
     def test_non_secret_content_not_redacted(self):
         """Lines without secrets must pass through unchanged."""
-        from ironmunch.tools.search_text import search_text
-        from ironmunch.parser.symbols import Symbol
+        from codesight_mcp.tools.search_text import search_text
+        from codesight_mcp.parser.symbols import Symbol
 
         file_content = 'prefix = "sk-short"\n'  # Only 5 chars after sk- — not redacted
 
@@ -680,7 +680,7 @@ class TestMakedirs0o700EnforcesPermissions:
         """A freshly created directory must have mode 0o700."""
         with tempfile.TemporaryDirectory() as tmp:
             target = os.path.join(tmp, "newdir")
-            from ironmunch.storage.index_store import _makedirs_0o700
+            from codesight_mcp.storage.index_store import _makedirs_0o700
             _makedirs_0o700(target)
             mode = os.stat(target).st_mode & 0o777
             assert mode == 0o700, f"Expected 0o700, got {oct(mode)}"
@@ -693,7 +693,7 @@ class TestMakedirs0o700EnforcesPermissions:
             # Confirm starting state is permissive
             assert (os.stat(target).st_mode & 0o777) == 0o755
 
-            from ironmunch.storage.index_store import _makedirs_0o700
+            from codesight_mcp.storage.index_store import _makedirs_0o700
             _makedirs_0o700(target)
 
             mode = os.stat(target).st_mode & 0o777
@@ -717,7 +717,7 @@ class TestMakedirs0o700EnforcesPermissions:
 
     def test_content_dir_rechmodded_if_permissive(self):
         """Content directory created during save_index must be 0o700 even if dir pre-existed."""
-        from ironmunch.parser.symbols import Symbol
+        from codesight_mcp.parser.symbols import Symbol
         with tempfile.TemporaryDirectory() as tmp:
             # Pre-create the content dir at 0o755
             content_dir = os.path.join(tmp, "owner__repo")

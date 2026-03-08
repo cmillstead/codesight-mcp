@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from ironmunch.tools._common import calculate_symbol_score
-from ironmunch.tools.search_symbols import search_symbols
-from ironmunch.tools.get_file_outline import get_file_outline
-from ironmunch.storage.index_store import IndexStore
-from ironmunch.parser.symbols import Symbol
-from ironmunch.core.validation import ValidationError
+from codesight_mcp.tools._common import calculate_symbol_score
+from codesight_mcp.tools.search_symbols import search_symbols
+from codesight_mcp.tools.get_file_outline import get_file_outline
+from codesight_mcp.storage.index_store import IndexStore
+from codesight_mcp.parser.symbols import Symbol
+from codesight_mcp.core.validation import ValidationError
 
 
 def _make_store_with_symbol(tmp: str) -> IndexStore:

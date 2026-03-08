@@ -2,7 +2,7 @@
 
 ## Threat Model
 
-ironmunch is an MCP server -- it runs locally and exposes tools to a connected AI model. **The connected AI is the attacker.** It can call any tool with any arguments, and it processes untrusted source code that may contain adversarial content designed to manipulate its behavior.
+codesight-mcp is an MCP server -- it runs locally and exposes tools to a connected AI model. **The connected AI is the attacker.** It can call any tool with any arguments, and it processes untrusted source code that may contain adversarial content designed to manipulate its behavior.
 
 The threat model assumes:
 
@@ -178,12 +178,12 @@ All security-critical tests use real temporary directories and real filesystem o
 
 ## Issues Fixed from jcodemunch-mcp
 
-Four security issues were identified in the original jcodemunch-mcp and addressed in ironmunch:
+Four security issues were identified in the original jcodemunch-mcp and addressed in codesight-mcp:
 
-1. **Unvalidated file reads at retrieval time** -- jcodemunch validated paths only during indexing. If an index file was modified (or crafted) after indexing, `get_symbol` and `search_text` would read arbitrary files. ironmunch validates every file path from the index at retrieval time via `validate_file_access()`.
+1. **Unvalidated file reads at retrieval time** -- jcodemunch validated paths only during indexing. If an index file was modified (or crafted) after indexing, `get_symbol` and `search_text` would read arbitrary files. codesight-mcp validates every file path from the index at retrieval time via `validate_file_access()`.
 
-2. **Unbounded `context_lines` parameter** -- `get_symbol` accepted an arbitrary `context_lines` value, allowing the AI to request the entire file (defeating the purpose of symbol-level retrieval). ironmunch clamps `context_lines` to `MAX_CONTEXT_LINES` (100).
+2. **Unbounded `context_lines` parameter** -- `get_symbol` accepted an arbitrary `context_lines` value, allowing the AI to request the entire file (defeating the purpose of symbol-level retrieval). codesight-mcp clamps `context_lines` to `MAX_CONTEXT_LINES` (100).
 
-3. **Raw error messages exposed to AI** -- Exceptions were returned as-is, potentially leaking filesystem paths, usernames, and internal structure. ironmunch sanitizes all errors through `sanitize_error()`, which passes through only pre-approved ValidationError messages or known errno mappings.
+3. **Raw error messages exposed to AI** -- Exceptions were returned as-is, potentially leaking filesystem paths, usernames, and internal structure. codesight-mcp sanitizes all errors through `sanitize_error()`, which passes through only pre-approved ValidationError messages or known errno mappings.
 
-4. **No content boundary markers** -- Source code was returned as plain text with no indication that it was untrusted. ironmunch wraps all source code and metadata fields in cryptographic boundary markers and includes `_meta` trust envelopes.
+4. **No content boundary markers** -- Source code was returned as plain text with no indication that it was untrusted. codesight-mcp wraps all source code and metadata fields in cryptographic boundary markers and includes `_meta` trust envelopes.

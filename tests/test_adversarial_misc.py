@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from ironmunch.core.errors import strip_system_paths
-from ironmunch.summarizer.batch_summarize import BatchSummarizer
-from ironmunch.parser.symbols import Symbol
+from codesight_mcp.core.errors import strip_system_paths
+from codesight_mcp.summarizer.batch_summarize import BatchSummarizer
+from codesight_mcp.parser.symbols import Symbol
 
 
 class TestPathPatternReDoS:
@@ -24,7 +24,7 @@ class TestPathPatternReDoS:
 
     def test_still_strips_real_paths(self):
         """After fix, real paths are still stripped."""
-        text = "Error at /home/user/src/ironmunch/server.py line 42"
+        text = "Error at /home/user/src/codesight-mcp/server.py line 42"
         result = strip_system_paths(text)
         assert "/home/user" not in result
         assert "<path>" in result
@@ -71,7 +71,7 @@ class TestIndexFolderPathLeak:
     def test_no_folder_path_in_response(self):
         """The response must not contain folder_path."""
         import tempfile, os
-        from ironmunch.tools.index_folder import index_folder
+        from codesight_mcp.tools.index_folder import index_folder
 
         with tempfile.TemporaryDirectory() as tmp:
             test_file = os.path.join(tmp, "test.py")
@@ -96,7 +96,7 @@ class TestIndexFolderDefaultDeny:
         """index_folder must fail when IRONMUNCH_ALLOWED_ROOTS is unset."""
         import tempfile, os
         from unittest.mock import patch
-        from ironmunch.tools.index_folder import index_folder
+        from codesight_mcp.tools.index_folder import index_folder
 
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(os.environ, {}, clear=True):
@@ -109,7 +109,7 @@ class TestIndexFolderDefaultDeny:
     def test_with_allowlist_works(self):
         """index_folder should work when allowed_roots is provided."""
         import tempfile
-        from ironmunch.tools.index_folder import index_folder
+        from codesight_mcp.tools.index_folder import index_folder
 
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "test.py").write_text("def hello():\n    pass\n")
@@ -129,7 +129,7 @@ class TestAllowedRootsLeadingColon:
     def test_leading_colon_rejected(self):
         """An empty string in allowed_roots must not silently permit any path."""
         import tempfile
-        from ironmunch.tools.index_folder import index_folder
+        from codesight_mcp.tools.index_folder import index_folder
 
         with tempfile.TemporaryDirectory() as safe_tmp:
             with tempfile.TemporaryDirectory() as cwd_tmp:
@@ -148,7 +148,7 @@ class TestAllowedRootsLeadingColon:
     def test_only_colons_rejected(self):
         """allowed_roots with only empty strings must return an error."""
         import tempfile
-        from ironmunch.tools.index_folder import index_folder
+        from codesight_mcp.tools.index_folder import index_folder
 
         with tempfile.TemporaryDirectory() as tmp:
             result = index_folder(path=tmp, use_ai_summaries=False, allowed_roots=["", "", ""])

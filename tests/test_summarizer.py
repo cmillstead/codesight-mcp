@@ -1,9 +1,9 @@
 """Tests for summarizer module."""
 
 import pytest
-from ironmunch.core.validation import ValidationError
-from ironmunch.parser.symbols import Symbol
-from ironmunch.summarizer.batch_summarize import (
+from codesight_mcp.core.validation import ValidationError
+from codesight_mcp.parser.symbols import Symbol
+from codesight_mcp.summarizer.batch_summarize import (
     MAX_BATCHES_PER_INDEX,
     BatchSummarizer,
     extract_summary_from_docstring,
@@ -341,7 +341,7 @@ def test_parse_response_redacts_inline_secret():
 def test_batch_summarizer_uses_no_proxy_client():
     """SEC-LOW-4: BatchSummarizer Anthropic client must be constructed with trust_env=False."""
     import inspect
-    import ironmunch.summarizer.batch_summarize as bsm
+    import codesight_mcp.summarizer.batch_summarize as bsm
 
     source = inspect.getsource(bsm.BatchSummarizer._init_client)
     assert "trust_env=False" in source, (
@@ -370,7 +370,7 @@ def test_nonce_entropy_sufficient():
         captured_args.append(n)
         return original_token_hex(n)
 
-    with patch("ironmunch.summarizer.batch_summarize.secrets.token_hex", side_effect=capturing_token_hex):
+    with patch("codesight_mcp.summarizer.batch_summarize.secrets.token_hex", side_effect=capturing_token_hex):
         # Trigger nonce generation by running _summarize_one_batch with a fake client
 
         class FakeContent:
@@ -811,7 +811,7 @@ def test_signature_fallback_clean_sig_unchanged():
 
 def test_summarize_symbols_no_ai_injection_docstring_filtered():
     """ADV-MED-4: summarize_symbols(use_ai=False) must not store injection phrases from docstrings."""
-    from ironmunch.summarizer.batch_summarize import summarize_symbols
+    from codesight_mcp.summarizer.batch_summarize import summarize_symbols
 
     sym = Symbol(
         id="test::dangerous",
@@ -832,7 +832,7 @@ def test_summarize_symbols_no_ai_injection_docstring_filtered():
 
 def test_summarize_symbols_no_ai_injection_signature_filtered():
     """ADV-MED-4: summarize_symbols(use_ai=False) must not store injection phrases from signatures."""
-    from ironmunch.summarizer.batch_summarize import summarize_symbols
+    from codesight_mcp.summarizer.batch_summarize import summarize_symbols
 
     sym = Symbol(
         id="test::injected",

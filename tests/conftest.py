@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for ironmunch tests.
+"""Shared pytest fixtures for codesight-mcp tests.
 
 Provides two reusable fixtures to reduce boilerplate in test files:
 
@@ -8,8 +8,8 @@ Provides two reusable fixtures to reduce boilerplate in test files:
 
 import pytest
 
-from ironmunch.storage import IndexStore
-from ironmunch.parser import Symbol
+from codesight_mcp.storage import IndexStore
+from codesight_mcp.parser import Symbol
 
 
 @pytest.fixture

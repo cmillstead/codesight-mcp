@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ironmunch.discovery import (
+from codesight_mcp.discovery import (
     SKIP_PATTERNS,
     should_skip_file,
     _load_gitignore,
@@ -17,7 +17,7 @@ from ironmunch.discovery import (
     parse_github_url,
     discover_source_files,
 )
-from ironmunch.core.limits import MAX_FILE_SIZE, MAX_FILE_COUNT
+from codesight_mcp.core.limits import MAX_FILE_SIZE, MAX_FILE_COUNT
 
 
 # ---------------------------------------------------------------------------
@@ -517,11 +517,11 @@ class TestSkipPatternsTraversal:
     """Discovery must skip paths containing '..' segments."""
 
     def test_dot_dot_in_path_skipped(self):
-        from ironmunch.discovery import should_skip_file
+        from codesight_mcp.discovery import should_skip_file
         assert should_skip_file("src/../etc/passwd") is True
 
     def test_dot_dot_at_start_skipped(self):
-        from ironmunch.discovery import should_skip_file
+        from codesight_mcp.discovery import should_skip_file
         assert should_skip_file("../../etc/passwd") is True
 
 
@@ -551,7 +551,7 @@ class TestFetchRepoTreeTrustEnv:
 
     @pytest.mark.asyncio
     async def test_trust_env_false(self):
-        from ironmunch.discovery import fetch_repo_tree
+        from codesight_mcp.discovery import fetch_repo_tree
 
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
@@ -562,7 +562,7 @@ class TestFetchRepoTreeTrustEnv:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(return_value=mock_response)
 
-        with patch("ironmunch.discovery.httpx.AsyncClient", return_value=mock_client) as mock_cls:
+        with patch("codesight_mcp.discovery.httpx.AsyncClient", return_value=mock_client) as mock_cls:
             await fetch_repo_tree("owner", "repo", token=None)
             call_kwargs = mock_cls.call_args.kwargs
             assert call_kwargs.get("trust_env") is False
@@ -668,7 +668,7 @@ class TestIndexFolderONoFollow:
         """Content-level binary sniff must skip symlinks via O_NOFOLLOW (SEC-MED-2)."""
         import sys
         import os
-        from ironmunch.discovery import discover_local_files
+        from codesight_mcp.discovery import discover_local_files
 
         if sys.platform == "win32":
             pytest.skip("Symlinks not reliable on Windows")
@@ -699,7 +699,7 @@ class TestAggregateWarnings:
     def test_symlink_escape_warning_no_filename(self, tmp_path):
         """Warning for symlink escape must be an aggregate count, not expose filename."""
         import sys
-        from ironmunch.discovery import discover_local_files
+        from codesight_mcp.discovery import discover_local_files
 
         if sys.platform == "win32":
             pytest.skip("Symlinks unreliable on Windows")
@@ -727,7 +727,7 @@ class TestAggregateWarnings:
     def test_symlink_escape_aggregate_count_format(self, tmp_path):
         """Symlink escape warning must contain a digit (aggregate count)."""
         import sys
-        from ironmunch.discovery import discover_local_files
+        from codesight_mcp.discovery import discover_local_files
 
         if sys.platform == "win32":
             pytest.skip("Symlinks unreliable on Windows")
@@ -746,7 +746,7 @@ class TestAggregateWarnings:
 
     def test_path_traversal_warning_no_path(self, tmp_path):
         """Warning for path traversal must not expose the relative path."""
-        from ironmunch.discovery import discover_local_files
+        from codesight_mcp.discovery import discover_local_files
 
         (tmp_path / "valid.py").write_text("def foo(): pass\n")
         files, warnings = discover_local_files(tmp_path)
@@ -770,7 +770,7 @@ class TestGithubPathEncoding:
     async def test_path_with_hash_is_encoded(self):
         """A file path containing '#' must be percent-encoded in the GitHub URL."""
         from unittest.mock import AsyncMock, MagicMock, patch
-        from ironmunch.discovery import fetch_file_content
+        from codesight_mcp.discovery import fetch_file_content
 
         captured_url = []
 
@@ -782,7 +782,7 @@ class TestGithubPathEncoding:
             mock_resp.text = "# content"
             return mock_resp
 
-        with patch("ironmunch.discovery.httpx.AsyncClient") as mock_cls:
+        with patch("codesight_mcp.discovery.httpx.AsyncClient") as mock_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -809,7 +809,7 @@ class TestGithubPathEncoding:
     async def test_path_with_space_is_encoded(self):
         """A file path containing a space must be percent-encoded in the GitHub URL."""
         from unittest.mock import AsyncMock, MagicMock, patch
-        from ironmunch.discovery import fetch_file_content
+        from codesight_mcp.discovery import fetch_file_content
 
         captured_url = []
 
@@ -820,7 +820,7 @@ class TestGithubPathEncoding:
             mock_resp.text = "content"
             return mock_resp
 
-        with patch("ironmunch.discovery.httpx.AsyncClient") as mock_cls:
+        with patch("codesight_mcp.discovery.httpx.AsyncClient") as mock_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -847,7 +847,7 @@ class TestGithubPathEncoding:
     async def test_slash_not_encoded_in_path(self):
         """Path separators '/' must NOT be encoded (safe='/')."""
         from unittest.mock import AsyncMock, MagicMock, patch
-        from ironmunch.discovery import fetch_file_content
+        from codesight_mcp.discovery import fetch_file_content
 
         captured_url = []
 
@@ -858,7 +858,7 @@ class TestGithubPathEncoding:
             mock_resp.text = "content"
             return mock_resp
 
-        with patch("ironmunch.discovery.httpx.AsyncClient") as mock_cls:
+        with patch("codesight_mcp.discovery.httpx.AsyncClient") as mock_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -889,7 +889,7 @@ class TestRedactAuthFilter:
     def test_authorization_header_not_in_debug_logs(self, caplog):
         """A simulated httpx DEBUG record containing 'Authorization' must be filtered out."""
         import logging
-        from ironmunch.discovery import _RedactAuthFilter
+        from codesight_mcp.discovery import _RedactAuthFilter
 
         # Build a logger that mimics httpx
         logger = logging.getLogger("httpx.test_redact")
@@ -911,7 +911,7 @@ class TestRedactAuthFilter:
     def test_non_authorization_debug_log_passes_through(self, caplog):
         """A httpx DEBUG record NOT containing 'Authorization' must not be filtered."""
         import logging
-        from ironmunch.discovery import _RedactAuthFilter
+        from codesight_mcp.discovery import _RedactAuthFilter
 
         logger = logging.getLogger("httpx.test_passthrough")
         logger.addFilter(_RedactAuthFilter())

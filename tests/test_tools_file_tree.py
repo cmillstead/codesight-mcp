@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from ironmunch.tools.get_file_tree import _build_tree, get_file_tree
-from ironmunch.storage import IndexStore
+from codesight_mcp.tools.get_file_tree import _build_tree, get_file_tree
+from codesight_mcp.storage import IndexStore
 
 
 def _make_index(files: list[str], symbols: list[dict]) -> object:

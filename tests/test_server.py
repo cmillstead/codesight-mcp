@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ironmunch.server import (
+from codesight_mcp.server import (
     _rate_limit,
     call_tool,
     list_tools,
@@ -15,16 +15,18 @@ from ironmunch.server import (
 
 @pytest.mark.asyncio
 async def test_server_lists_all_tools():
-    """Test that server lists all 11 tools."""
+    """Test that server lists all 17 tools."""
     tools = await list_tools()
 
-    assert len(tools) == 11
+    assert len(tools) == 17
 
     names = {t.name for t in tools}
     expected = {
         "index_repo", "index_folder", "list_repos", "get_file_tree",
         "get_file_outline", "get_symbol", "get_symbols", "search_symbols",
-        "invalidate_cache", "search_text", "get_repo_outline"
+        "invalidate_cache", "search_text", "get_repo_outline",
+        "get_callers", "get_callees", "get_call_chain",
+        "get_type_hierarchy", "get_imports", "get_impact",
     }
     assert names == expected
 
@@ -218,7 +220,7 @@ class TestCallToolInputBounds:
 
     def test_string_false_is_falsy(self):
         """String 'false' must be coerced to False for boolean flags."""
-        from ironmunch.server import _sanitize_arguments
+        from codesight_mcp.server import _sanitize_arguments
         args = {"follow_symlinks": "false", "path": "/test"}
         result = _sanitize_arguments("index_folder", args)
         assert isinstance(result, dict)
@@ -226,7 +228,7 @@ class TestCallToolInputBounds:
 
     def test_string_true_is_falsy_too(self):
         """String 'true' is not in (True, 1) so it should be False."""
-        from ironmunch.server import _sanitize_arguments
+        from codesight_mcp.server import _sanitize_arguments
         args = {"verify": "true"}
         result = _sanitize_arguments("get_symbol", args)
         assert isinstance(result, dict)
@@ -234,7 +236,7 @@ class TestCallToolInputBounds:
 
     def test_actual_bool_true_preserved(self):
         """Actual boolean True must be preserved."""
-        from ironmunch.server import _sanitize_arguments
+        from codesight_mcp.server import _sanitize_arguments
         args = {"follow_symlinks": True, "path": "/test"}
         result = _sanitize_arguments("index_folder", args)
         assert isinstance(result, dict)
@@ -242,7 +244,7 @@ class TestCallToolInputBounds:
 
     def test_search_confirmation_bool_preserved(self):
         """confirm_sensitive_search must preserve a real boolean."""
-        from ironmunch.server import _sanitize_arguments
+        from codesight_mcp.server import _sanitize_arguments
         args = {"query": "x", "confirm_sensitive_search": True}
         result = _sanitize_arguments("search_text", args)
         assert isinstance(result, dict)
@@ -250,7 +252,7 @@ class TestCallToolInputBounds:
 
     def test_symbol_ids_oversized_items_filtered(self):
         """SEC-LOW-3: oversized symbol_ids must be filtered."""
-        from ironmunch.server import _sanitize_arguments, MAX_ARGUMENT_LENGTH
+        from codesight_mcp.server import _sanitize_arguments, MAX_ARGUMENT_LENGTH
         args = {"repo": "test/repo", "symbol_ids": ["ok", "x" * (MAX_ARGUMENT_LENGTH + 1)]}
         result = _sanitize_arguments("get_symbols", args)
         assert isinstance(result, dict)
@@ -259,8 +261,8 @@ class TestCallToolInputBounds:
 
     def test_file_pattern_capped(self):
         """SEC-LOW-6: file_pattern must be capped to MAX_FILE_PATTERN_LENGTH."""
-        from ironmunch.server import _sanitize_arguments
-        from ironmunch.core.limits import MAX_FILE_PATTERN_LENGTH
+        from codesight_mcp.server import _sanitize_arguments
+        from codesight_mcp.core.limits import MAX_FILE_PATTERN_LENGTH
         args = {"repo": "test/repo", "query": "foo", "file_pattern": "x" * 500}
         result = _sanitize_arguments("search_text", args)
         assert isinstance(result, dict)
@@ -270,7 +272,7 @@ class TestCallToolInputBounds:
 
     def test_context_lines_dict_returns_validation_error(self):
         """SEC-LOW-2: context_lines with dict value must return a helpful error."""
-        from ironmunch.server import _sanitize_arguments
+        from codesight_mcp.server import _sanitize_arguments
         result = _sanitize_arguments("get_symbol", {
             "repo": "test/repo",
             "symbol_id": "some-id",
@@ -297,7 +299,7 @@ class TestCallToolInputBounds:
 
     def test_max_results_string_int_coerced(self):
         """SEC-LOW-2: max_results with string integer must be coerced, not error."""
-        from ironmunch.server import _sanitize_arguments
+        from codesight_mcp.server import _sanitize_arguments
         result = _sanitize_arguments("search_symbols", {
             "repo": "test/repo",
             "query": "foo",
@@ -308,7 +310,7 @@ class TestCallToolInputBounds:
 
     def test_max_results_non_numeric_string_rejected(self):
         """SEC-LOW-2: max_results='notanint' must return a validation error."""
-        from ironmunch.server import _sanitize_arguments
+        from codesight_mcp.server import _sanitize_arguments
         result = _sanitize_arguments("search_symbols", {
             "repo": "test/repo",
             "query": "foo",
@@ -320,7 +322,7 @@ class TestCallToolInputBounds:
 
     def test_context_lines_float_coerced(self):
         """SEC-LOW-2: context_lines=3.7 must be coerced to int 3."""
-        from ironmunch.server import _sanitize_arguments
+        from codesight_mcp.server import _sanitize_arguments
         result = _sanitize_arguments("get_symbol", {
             "repo": "test/repo",
             "symbol_id": "sid",
@@ -331,8 +333,8 @@ class TestCallToolInputBounds:
 
     def test_context_lines_clamped_to_max(self):
         """SEC-LOW-2: context_lines above MAX_CONTEXT_LINES must be clamped."""
-        from ironmunch.server import _sanitize_arguments
-        from ironmunch.core.limits import MAX_CONTEXT_LINES
+        from codesight_mcp.server import _sanitize_arguments
+        from codesight_mcp.core.limits import MAX_CONTEXT_LINES
         result = _sanitize_arguments("get_symbol", {
             "repo": "test/repo",
             "symbol_id": "sid",
@@ -343,8 +345,8 @@ class TestCallToolInputBounds:
 
     def test_max_results_clamped_to_max(self):
         """SEC-LOW-2: max_results above MAX_SEARCH_RESULTS must be clamped."""
-        from ironmunch.server import _sanitize_arguments
-        from ironmunch.core.limits import MAX_SEARCH_RESULTS
+        from codesight_mcp.server import _sanitize_arguments
+        from codesight_mcp.core.limits import MAX_SEARCH_RESULTS
         result = _sanitize_arguments("search_symbols", {
             "repo": "test/repo",
             "query": "foo",
@@ -372,7 +374,7 @@ class TestRateLimiting:
 
     def test_global_rate_limit_blocks_after_limit_reached(self, tmp_path):
         """Filling the persisted global bucket to the cap must block the next call."""
-        from ironmunch.server import _MAX_GLOBAL_CALLS_PER_MINUTE
+        from codesight_mcp.server import _MAX_GLOBAL_CALLS_PER_MINUTE
 
         state_path = tmp_path / ".rate_limits.json"
         now = 2_000_000_000.0
@@ -395,7 +397,7 @@ class TestUnknownToolRejectedBeforeRateLimit:
     @pytest.mark.asyncio
     async def test_unknown_tool_returns_error_and_does_not_create_rate_limit_state(self, monkeypatch, tmp_path):
         """Calling an unknown tool must not create persistent rate-limit state."""
-        import ironmunch.server as server_module
+        import codesight_mcp.server as server_module
         monkeypatch.setattr(server_module, "_rate_limit_state_dir", lambda _storage: tmp_path)
 
         result = await call_tool("totally_fake_tool", {})
@@ -411,7 +413,7 @@ class TestUnknownToolRejectedBeforeRateLimit:
     @pytest.mark.asyncio
     async def test_many_fake_tool_calls_do_not_create_rate_limit_state(self, monkeypatch, tmp_path):
         """Flooding unknown tool names must not create rate-limit state."""
-        import ironmunch.server as server_module
+        import codesight_mcp.server as server_module
         monkeypatch.setattr(server_module, "_rate_limit_state_dir", lambda _storage: tmp_path)
 
         for i in range(150):
@@ -461,7 +463,7 @@ class TestGetFileTreePathPrefixValidation:
 
     def test_path_prefix_validation_direct(self):
         """Test path_prefix validation directly in get_file_tree module."""
-        from ironmunch.tools.get_file_tree import get_file_tree
+        from codesight_mcp.tools.get_file_tree import get_file_tree
         result = get_file_tree(repo="test/repo", path_prefix="../")
         assert "error" in result
 
@@ -473,7 +475,7 @@ class TestListReposTypeValidation:
 
     def test_malformed_repo_null_is_skipped(self, tmp_path):
         """An entry with 'repo': null must be silently skipped."""
-        from ironmunch.storage.index_store import IndexStore
+        from codesight_mcp.storage.index_store import IndexStore
         import json as _json
 
         store = IndexStore(base_path=str(tmp_path))
@@ -513,7 +515,7 @@ class TestListReposTypeValidation:
 
     def test_malformed_indexed_at_null_is_skipped(self, tmp_path):
         """An entry with 'indexed_at': null must be silently skipped."""
-        from ironmunch.storage.index_store import IndexStore
+        from codesight_mcp.storage.index_store import IndexStore
         import json as _json
 
         store = IndexStore(base_path=str(tmp_path))
@@ -545,7 +547,7 @@ class TestMkdirMode:
     def test_content_dir_mode_0o700(self, tmp_path):
         """After indexing, the content directory must have mode 0o700."""
         import stat
-        from ironmunch.storage.index_store import IndexStore
+        from codesight_mcp.storage.index_store import IndexStore
 
         store = IndexStore(base_path=str(tmp_path))
         store.save_index(
@@ -565,7 +567,7 @@ class TestMkdirMode:
     def test_nested_content_subdir_mode_0o700(self, tmp_path):
         """Intermediate content subdirectories must also have mode 0o700."""
         import stat
-        from ironmunch.storage.index_store import IndexStore
+        from codesight_mcp.storage.index_store import IndexStore
 
         store = IndexStore(base_path=str(tmp_path))
         store.save_index(
@@ -614,7 +616,7 @@ class TestGetSymbolsSymbolIdsTypeGuard:
 
     def test_symbol_ids_non_list_returns_error_string_from_sanitize(self):
         """SEC-LOW-1: _sanitize_arguments must return an error string for non-list symbol_ids."""
-        from ironmunch.server import _sanitize_arguments
+        from codesight_mcp.server import _sanitize_arguments
         result = _sanitize_arguments("get_symbols", {
             "repo": "test/repo",
             "symbol_ids": {"key": "val"},
@@ -631,19 +633,19 @@ class TestCodeIndexPathValidation:
 
     def test_relative_path_raises_value_error(self):
         """_validate_storage_path must raise ValueError for a relative path."""
-        from ironmunch.server import _validate_storage_path
+        from codesight_mcp.server import _validate_storage_path
         import pytest
         with pytest.raises(ValueError, match="absolute"):
             _validate_storage_path("../../relative/path")
 
     def test_none_returns_none(self):
         """_validate_storage_path(None) must return None (not set case)."""
-        from ironmunch.server import _validate_storage_path
+        from codesight_mcp.server import _validate_storage_path
         assert _validate_storage_path(None) is None
 
     def test_absolute_path_returned_resolved(self, tmp_path):
         """_validate_storage_path with an absolute path must return its resolved form."""
-        from ironmunch.server import _validate_storage_path
+        from codesight_mcp.server import _validate_storage_path
         result = _validate_storage_path(str(tmp_path))
         assert result is not None
         assert result.startswith("/")
@@ -654,7 +656,7 @@ class TestCodeIndexPathValidation:
         Note: _CODE_INDEX_PATH is now read once at module import time (ADV-LOW-7).
         To test the validation logic, we patch _CODE_INDEX_PATH directly.
         """
-        import ironmunch.server as server_module
+        import codesight_mcp.server as server_module
         original = server_module._CODE_INDEX_PATH
         try:
             server_module._CODE_INDEX_PATH = "relative/path"
@@ -671,9 +673,9 @@ class TestParseRepoBareNameLookup:
 
     def test_bare_name_found(self, tmp_path):
         """parse_repo resolves a bare name when exactly one match exists."""
-        from ironmunch.tools._common import parse_repo
-        from ironmunch.storage import IndexStore
-        from ironmunch.parser import Symbol
+        from codesight_mcp.tools._common import parse_repo
+        from codesight_mcp.storage import IndexStore
+        from codesight_mcp.parser import Symbol
 
         store = IndexStore(base_path=str(tmp_path))
         store.save_index(
@@ -692,18 +694,18 @@ class TestParseRepoBareNameLookup:
 
     def test_bare_name_not_found(self, tmp_path):
         """parse_repo raises RepoNotFoundError when no match exists."""
-        from ironmunch.tools._common import parse_repo
-        from ironmunch.core.errors import RepoNotFoundError
+        from codesight_mcp.tools._common import parse_repo
+        from codesight_mcp.core.errors import RepoNotFoundError
 
         with pytest.raises(RepoNotFoundError, match="not found"):
             parse_repo("doesnotexist", storage_path=str(tmp_path))
 
     def test_bare_name_ambiguous(self, tmp_path):
         """parse_repo raises RepoNotFoundError when multiple repos share the name."""
-        from ironmunch.tools._common import parse_repo
-        from ironmunch.core.errors import RepoNotFoundError
-        from ironmunch.storage import IndexStore
-        from ironmunch.parser import Symbol
+        from codesight_mcp.tools._common import parse_repo
+        from codesight_mcp.core.errors import RepoNotFoundError
+        from codesight_mcp.storage import IndexStore
+        from codesight_mcp.parser import Symbol
 
         store = IndexStore(base_path=str(tmp_path))
         for owner in ("org1", "org2"):
@@ -729,9 +731,9 @@ class TestGetSymbolsMixed:
     def test_get_symbols_mixed_valid_and_invalid(self, tmp_path):
         """Valid symbol_ids return results; invalid ones return errors (no crash)."""
         import tempfile
-        from ironmunch.storage.index_store import IndexStore
-        from ironmunch.tools.get_symbol import get_symbols
-        from ironmunch.parser import parse_file
+        from codesight_mcp.storage.index_store import IndexStore
+        from codesight_mcp.tools.get_symbol import get_symbols
+        from codesight_mcp.parser import parse_file
 
         src = "def alpha():\n    return 1\n\ndef beta():\n    return 2\n"
 
@@ -789,7 +791,7 @@ class TestAllowedRootsAbsolutePaths:
 
     def test_allowed_roots_are_absolute_paths(self):
         """ALLOWED_ROOTS module-level list must contain only absolute paths."""
-        import ironmunch.server as server_module
+        import codesight_mcp.server as server_module
         for root in server_module.ALLOWED_ROOTS:
             assert root.startswith("/"), (
                 f"ALLOWED_ROOTS entry is not absolute: {root!r}"
@@ -803,7 +805,7 @@ class TestCodeIndexPathReadOnce:
 
     def test_env_mutation_after_import_does_not_affect_stored_path(self, monkeypatch):
         """Modifying os.environ after module import must not change _CODE_INDEX_PATH."""
-        import ironmunch.server as server_module
+        import codesight_mcp.server as server_module
 
         # Record the value frozen at import time
         frozen = server_module._CODE_INDEX_PATH
@@ -848,7 +850,7 @@ class TestPersistentRateLimit:
             _rate_limit("search_text", str(tmp_path))
 
     def test_rate_limit_temp_fallback_is_private_per_user(self, monkeypatch, tmp_path):
-        import ironmunch.server as server_module
+        import codesight_mcp.server as server_module
 
         real_ensure = server_module.ensure_private_dir
         home_dir = Path.home() / ".code-index"
@@ -862,7 +864,7 @@ class TestPersistentRateLimit:
         monkeypatch.setattr(server_module, "ensure_private_dir", fake_ensure)
 
         fallback = server_module._rate_limit_state_dir(None)
-        assert "ironmunch-rate-limits-" in fallback.name
+        assert "codesight-mcp-rate-limits-" in fallback.name
 
     def test_rate_limit_rejects_symlink_state_dir(self, tmp_path):
         real_dir = tmp_path / "real"
@@ -874,7 +876,7 @@ class TestPersistentRateLimit:
             _rate_limit("search_text", str(link_dir))
 
     def test_rate_limit_oversized_state_file_resets_safely(self, tmp_path):
-        from ironmunch.core.limits import MAX_INDEX_SIZE
+        from codesight_mcp.core.limits import MAX_INDEX_SIZE
 
         state_path = tmp_path / ".rate_limits.json"
         state_path.write_text("x" * (MAX_INDEX_SIZE + 1), encoding="utf-8")

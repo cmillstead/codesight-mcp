@@ -1,8 +1,8 @@
 """Tests for the parser module (Phase 1)."""
 
 import pytest
-from ironmunch.parser import parse_file, Symbol
-from ironmunch.parser.extractor import _get_parser
+from codesight_mcp.parser import parse_file, Symbol
+from codesight_mcp.parser.extractor import _get_parser
 
 
 PYTHON_SOURCE = '''
@@ -52,7 +52,7 @@ def test_parse_python():
 
 def test_symbol_id_format():
     """Test symbol ID generation."""
-    from ironmunch.parser import make_symbol_id
+    from codesight_mcp.parser import make_symbol_id
 
     assert make_symbol_id("src/main.py", "MyClass.method", "method") == "src/main.py::MyClass.method#method"
     assert make_symbol_id("test.py", "standalone", "function") == "test.py::standalone#function"
@@ -246,8 +246,8 @@ class TestGetSymbolSourceRedaction:
         """A function body containing a Bearer token must be redacted in get_symbol output."""
         import json
         from pathlib import Path
-        from ironmunch.storage.index_store import IndexStore
-        from ironmunch.tools.get_symbol import get_symbol
+        from codesight_mcp.storage.index_store import IndexStore
+        from codesight_mcp.tools.get_symbol import get_symbol
 
         owner, name, sym_id = "test", "repo", "connect_abc"
         # Function body: header with a literal secret token
@@ -302,8 +302,8 @@ class TestGetSymbolSourceRedaction:
         """A function body without secrets must be returned unchanged."""
         import json
         from pathlib import Path
-        from ironmunch.storage.index_store import IndexStore
-        from ironmunch.tools.get_symbol import get_symbol
+        from codesight_mcp.storage.index_store import IndexStore
+        from codesight_mcp.tools.get_symbol import get_symbol
 
         owner, name, sym_id = "test", "repo2", "add_abc"
         body = "def add(a, b):\n    return a + b\n"

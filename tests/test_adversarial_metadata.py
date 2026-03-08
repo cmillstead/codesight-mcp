@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from ironmunch.storage.index_store import IndexStore
-from ironmunch.parser.symbols import Symbol
-from ironmunch.tools.search_symbols import search_symbols
-from ironmunch.tools.get_file_outline import get_file_outline
-from ironmunch.tools.get_symbol import get_symbol
-from ironmunch.tools.list_repos import list_repos
+from codesight_mcp.storage.index_store import IndexStore
+from codesight_mcp.parser.symbols import Symbol
+from codesight_mcp.tools.search_symbols import search_symbols
+from codesight_mcp.tools.get_file_outline import get_file_outline
+from codesight_mcp.tools.get_symbol import get_symbol
+from codesight_mcp.tools.list_repos import list_repos
 
 _SPOTLIGHTING_MARKER = "<<<UNTRUSTED_CODE_"
 

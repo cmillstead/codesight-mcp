@@ -1,6 +1,6 @@
 """Index a GitHub repository -- fetch, parse, summarize, save.
 
-This is a thin wrapper that delegates discovery to ``ironmunch.discovery``
+This is a thin wrapper that delegates discovery to ``codesight_mcp.discovery``
 (already extracted and ported). The tool handles orchestration: fetching
 content, parsing, summarizing, and saving to the IndexStore.
 """
@@ -76,7 +76,7 @@ async def index_repo(
         # Fetch .gitignore
         gitignore_content = await fetch_gitignore(owner, repo, github_token)
 
-        # Discover source files (uses ironmunch.discovery)
+        # Discover source files (uses codesight_mcp.discovery)
         source_files = discover_source_files(tree_entries, gitignore_content)
 
         if not source_files:

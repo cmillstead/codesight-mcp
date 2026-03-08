@@ -1,4 +1,4 @@
-"""MCP server for ironmunch -- security-hardened code indexing.
+"""MCP server for codesight-mcp -- security-hardened code indexing.
 
 Ported from jcodemunch-mcp with three hardening layers:
 
@@ -31,6 +31,12 @@ from .tools.search_symbols import search_symbols
 from .tools.invalidate_cache import invalidate_cache
 from .tools.search_text import search_text
 from .tools.get_repo_outline import get_repo_outline
+from .tools.get_callers import get_callers
+from .tools.get_callees import get_callees
+from .tools.get_call_chain import get_call_chain
+from .tools.get_type_hierarchy import get_type_hierarchy
+from .tools.get_imports import get_imports
+from .tools.get_impact import get_impact
 from .core.errors import sanitize_error
 from .core.limits import (
     MAX_ARGUMENT_LENGTH, MAX_BATCH_SYMBOLS, MAX_FILE_PATTERN_LENGTH,
@@ -51,6 +57,7 @@ ALLOWED_ROOTS: list[str] = [str(Path(r).resolve()) for r in _raw_roots if r]
 _INT_PARAM_BOUNDS: dict[str, tuple[int, int]] = {
     "context_lines": (0, MAX_CONTEXT_LINES),
     "max_results": (1, MAX_SEARCH_RESULTS),
+    "max_depth": (1, 10),
 }
 
 
@@ -76,7 +83,7 @@ _TEXT_SEARCH_WARNING = (
 
 
 # Create server
-server = Server("ironmunch")
+server = Server("codesight-mcp")
 
 
 @server.list_tools()
@@ -371,6 +378,168 @@ async def list_tools() -> list[Tool]:
                 "required": ["repo"]
             }
         ),
+        Tool(
+            name="get_callers",
+            description=(
+                "Get symbols that call a specified symbol. Supports transitive "
+                "caller traversal up to a configurable depth."
+                + _UNTRUSTED_WARNING
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repo": {
+                        "type": "string",
+                        "description": "Repository identifier (owner/repo or just repo name)"
+                    },
+                    "symbol_id": {
+                        "type": "string",
+                        "description": "Symbol ID to find callers of"
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "description": "Maximum traversal depth (1 = direct callers only, max 5)",
+                        "default": 1
+                    }
+                },
+                "required": ["repo", "symbol_id"]
+            }
+        ),
+        Tool(
+            name="get_callees",
+            description=(
+                "Get symbols that a specified symbol calls. Supports transitive "
+                "callee traversal up to a configurable depth."
+                + _UNTRUSTED_WARNING
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repo": {
+                        "type": "string",
+                        "description": "Repository identifier (owner/repo or just repo name)"
+                    },
+                    "symbol_id": {
+                        "type": "string",
+                        "description": "Symbol ID to find callees of"
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "description": "Maximum traversal depth (1 = direct callees only, max 5)",
+                        "default": 1
+                    }
+                },
+                "required": ["repo", "symbol_id"]
+            }
+        ),
+        Tool(
+            name="get_call_chain",
+            description=(
+                "Find call paths between two symbols in the call graph. "
+                "Returns up to 5 shortest paths."
+                + _UNTRUSTED_WARNING
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repo": {
+                        "type": "string",
+                        "description": "Repository identifier (owner/repo or just repo name)"
+                    },
+                    "from_symbol": {
+                        "type": "string",
+                        "description": "Starting symbol ID"
+                    },
+                    "to_symbol": {
+                        "type": "string",
+                        "description": "Target symbol ID"
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "description": "Maximum path length to search (default 10, max 10)",
+                        "default": 10
+                    }
+                },
+                "required": ["repo", "from_symbol", "to_symbol"]
+            }
+        ),
+        Tool(
+            name="get_type_hierarchy",
+            description=(
+                "Get the inheritance hierarchy for a class or type. "
+                "Shows parents (ancestors) above and children (descendants) below."
+                + _UNTRUSTED_WARNING
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repo": {
+                        "type": "string",
+                        "description": "Repository identifier (owner/repo or just repo name)"
+                    },
+                    "symbol_id": {
+                        "type": "string",
+                        "description": "Symbol ID of the class or type to inspect"
+                    }
+                },
+                "required": ["repo", "symbol_id"]
+            }
+        ),
+        Tool(
+            name="get_imports",
+            description=(
+                "Get import relationships for a file. Shows what a file imports "
+                "or what files import it."
+                + _UNTRUSTED_WARNING
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repo": {
+                        "type": "string",
+                        "description": "Repository identifier (owner/repo or just repo name)"
+                    },
+                    "file": {
+                        "type": "string",
+                        "description": "Path to file within the repository"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "description": "Direction of import lookup",
+                        "enum": ["imports", "importers"],
+                        "default": "imports"
+                    }
+                },
+                "required": ["repo", "file"]
+            }
+        ),
+        Tool(
+            name="get_impact",
+            description=(
+                "Transitive impact analysis -- find everything affected if a "
+                "symbol changes. Traces callers, inheritors, and importers."
+                + _UNTRUSTED_WARNING
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repo": {
+                        "type": "string",
+                        "description": "Repository identifier (owner/repo or just repo name)"
+                    },
+                    "symbol_id": {
+                        "type": "string",
+                        "description": "Symbol ID to analyze impact for"
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "description": "Maximum traversal depth (default 3, max 10)",
+                        "default": 3
+                    }
+                },
+                "required": ["repo", "symbol_id"]
+            }
+        ),
     ]
 
 
@@ -379,6 +548,8 @@ KNOWN_TOOLS = frozenset({
     "index_repo", "index_folder", "list_repos", "get_file_tree",
     "get_file_outline", "get_symbol", "get_symbols", "search_symbols",
     "invalidate_cache", "search_text", "get_repo_outline",
+    "get_callers", "get_callees", "get_call_chain",
+    "get_type_hierarchy", "get_imports", "get_impact",
 })
 
 # Rate limiting — persistent file-backed sliding window
@@ -401,7 +572,7 @@ def _rate_limit_state_dir(storage_path: str | None) -> Path:
     except OSError:
         uid = getattr(os, "getuid", lambda: None)()
         suffix = str(uid) if uid is not None else os.environ.get("USER", "unknown")
-        return ensure_private_dir(Path(tempfile.gettempdir()) / f"ironmunch-rate-limits-{suffix}")
+        return ensure_private_dir(Path(tempfile.gettempdir()) / f"codesight-mcp-rate-limits-{suffix}")
 
 
 def _rate_limit(tool_name: str, storage_path: str | None) -> bool:
@@ -626,6 +797,48 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 repo=arguments["repo"],
                 storage_path=storage_path
             )
+        elif name == "get_callers":
+            result = get_callers(
+                repo=arguments["repo"],
+                symbol_id=arguments["symbol_id"],
+                max_depth=arguments.get("max_depth", 1),
+                storage_path=storage_path
+            )
+        elif name == "get_callees":
+            result = get_callees(
+                repo=arguments["repo"],
+                symbol_id=arguments["symbol_id"],
+                max_depth=arguments.get("max_depth", 1),
+                storage_path=storage_path
+            )
+        elif name == "get_call_chain":
+            result = get_call_chain(
+                repo=arguments["repo"],
+                from_symbol=arguments["from_symbol"],
+                to_symbol=arguments["to_symbol"],
+                max_depth=arguments.get("max_depth", 10),
+                storage_path=storage_path
+            )
+        elif name == "get_type_hierarchy":
+            result = get_type_hierarchy(
+                repo=arguments["repo"],
+                symbol_id=arguments["symbol_id"],
+                storage_path=storage_path
+            )
+        elif name == "get_imports":
+            result = get_imports(
+                repo=arguments["repo"],
+                file=arguments["file"],
+                direction=arguments.get("direction", "imports"),
+                storage_path=storage_path
+            )
+        elif name == "get_impact":
+            result = get_impact(
+                repo=arguments["repo"],
+                symbol_id=arguments["symbol_id"],
+                max_depth=arguments.get("max_depth", 3),
+                storage_path=storage_path
+            )
         else:
             raise RuntimeError(f"Unhandled known tool: {name}")
 
@@ -652,8 +865,8 @@ def main():
 
     Supports optional subcommands for use in git hooks::
 
-        ironmunch index [path] [--no-ai]       # index a local folder
-        ironmunch index-repo <url> [--no-ai]   # index a GitHub repo
+        codesight-mcp index [path] [--no-ai]       # index a local folder
+        codesight-mcp index-repo <url> [--no-ai]   # index a GitHub repo
 
     If ``IRONMUNCH_ALLOWED_ROOTS`` is not set, ``index`` defaults the allowed
     root to the target path itself so the CLI is usable outside an MCP session.
@@ -679,7 +892,7 @@ def main():
         use_ai = "--no-ai" not in args
         url_args = [a for a in args if not a.startswith("--")]
         if not url_args:
-            print(json.dumps({"error": "Usage: ironmunch index-repo <url> [--no-ai]"}))
+            print(json.dumps({"error": "Usage: codesight-mcp index-repo <url> [--no-ai]"}))
             sys.exit(1)
         url = url_args[0]
         storage_path = _CODE_INDEX_PATH or None

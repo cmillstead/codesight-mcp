@@ -1,6 +1,6 @@
 """Language registry with LanguageSpec definitions for all supported languages."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -42,6 +42,12 @@ class LanguageSpec:
     constant_patterns: list[str]   # Node types for constants
     type_patterns: list[str]       # Node types for type definitions
 
+    # Relationship tracking: AST node types for call graphs, imports, inheritance
+    call_node_types: list[str] = field(default_factory=list)          # Function/method call node types
+    import_node_types: list[str] = field(default_factory=list)        # Import statement node types
+    inheritance_fields: list[str] = field(default_factory=list)       # AST fields for superclass/parent refs
+    implementation_fields: list[str] = field(default_factory=list)    # AST fields for interface implementations
+
 
 # File extension to language mapping
 LANGUAGE_EXTENSIONS = {
@@ -54,6 +60,18 @@ LANGUAGE_EXTENSIONS = {
     ".rs": "rust",
     ".java": "java",
     ".php": "php",
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".hpp": "cpp",
+    ".hh": "cpp",
+    ".cs": "c_sharp",
+    ".rb": "ruby",
+    ".swift": "swift",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
 }
 
 
@@ -79,6 +97,9 @@ PYTHON_SPEC = LanguageSpec(
     container_node_types=["class_definition"],
     constant_patterns=["assignment"],
     type_patterns=["type_alias_statement"],
+    call_node_types=["call"],
+    import_node_types=["import_statement", "import_from_statement"],
+    inheritance_fields=["argument_list"],
 )
 
 
@@ -108,6 +129,9 @@ JAVASCRIPT_SPEC = LanguageSpec(
     container_node_types=["class_declaration", "class"],
     constant_patterns=["lexical_declaration"],
     type_patterns=[],
+    call_node_types=["call_expression"],
+    import_node_types=["import_statement"],
+    inheritance_fields=["class_heritage"],
 )
 
 
@@ -146,6 +170,10 @@ TYPESCRIPT_SPEC = LanguageSpec(
     container_node_types=["class_declaration", "class"],
     constant_patterns=["lexical_declaration"],
     type_patterns=["interface_declaration", "type_alias_declaration", "enum_declaration"],
+    call_node_types=["call_expression"],
+    import_node_types=["import_statement"],
+    inheritance_fields=["class_heritage"],
+    implementation_fields=["class_heritage"],
 )
 
 
@@ -175,6 +203,8 @@ GO_SPEC = LanguageSpec(
     container_node_types=[],
     constant_patterns=["const_declaration"],
     type_patterns=["type_declaration"],
+    call_node_types=["call_expression"],
+    import_node_types=["import_declaration"],
 )
 
 
@@ -207,6 +237,9 @@ RUST_SPEC = LanguageSpec(
     container_node_types=["impl_item", "trait_item"],
     constant_patterns=["const_item", "static_item"],
     type_patterns=["struct_item", "enum_item", "trait_item", "type_item"],
+    call_node_types=["call_expression", "macro_invocation"],
+    import_node_types=["use_declaration"],
+    inheritance_fields=["trait_bounds"],
 )
 
 
@@ -239,6 +272,10 @@ JAVA_SPEC = LanguageSpec(
     container_node_types=["class_declaration", "interface_declaration", "enum_declaration"],
     constant_patterns=["field_declaration"],
     type_patterns=["interface_declaration", "enum_declaration"],
+    call_node_types=["method_invocation"],
+    import_node_types=["import_declaration"],
+    inheritance_fields=["superclass"],
+    implementation_fields=["super_interfaces"],
 )
 
 
@@ -274,6 +311,193 @@ PHP_SPEC = LanguageSpec(
     container_node_types=["class_declaration", "trait_declaration", "interface_declaration"],
     constant_patterns=["const_declaration"],
     type_patterns=["interface_declaration", "trait_declaration", "enum_declaration"],
+    call_node_types=["function_call_expression", "member_call_expression"],
+    import_node_types=["namespace_use_declaration"],
+    inheritance_fields=["base_clause"],
+    implementation_fields=["class_interface_clause"],
+)
+
+
+# C specification
+C_SPEC = LanguageSpec(
+    ts_language="c",
+    symbol_node_types={
+        "function_definition": "function",
+        "struct_specifier": "type",
+        "enum_specifier": "type",
+        "type_definition": "type",
+    },
+    name_fields={
+        "struct_specifier": "name",
+        "enum_specifier": "name",
+        # function_definition and type_definition use declarator — handled in extractor
+    },
+    param_fields={},  # parameters are inside function_declarator — handled in extractor
+    return_type_fields={
+        "function_definition": "type",
+    },
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=["struct_specifier"],
+    constant_patterns=["preproc_def"],
+    type_patterns=["type_definition", "struct_specifier", "enum_specifier"],
+    call_node_types=["call_expression"],
+    import_node_types=["preproc_include"],
+)
+
+
+# C++ specification
+CPP_SPEC = LanguageSpec(
+    ts_language="cpp",
+    symbol_node_types={
+        "function_definition": "function",
+        "class_specifier": "class",
+        "struct_specifier": "type",
+        "enum_specifier": "type",
+        "namespace_definition": "type",
+    },
+    name_fields={
+        "class_specifier": "name",
+        "struct_specifier": "name",
+        "enum_specifier": "name",
+        "namespace_definition": "name",
+        # function_definition uses declarator — handled in extractor
+    },
+    param_fields={},  # parameters are inside function_declarator — handled in extractor
+    return_type_fields={
+        "function_definition": "type",
+    },
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=["class_specifier", "struct_specifier", "namespace_definition"],
+    constant_patterns=["preproc_def"],
+    type_patterns=["class_specifier", "struct_specifier", "enum_specifier"],
+    call_node_types=["call_expression"],
+    import_node_types=["preproc_include", "using_declaration"],
+    inheritance_fields=["base_class_clause"],
+)
+
+
+# C# specification
+CSHARP_SPEC = LanguageSpec(
+    ts_language="c_sharp",
+    symbol_node_types={
+        "method_declaration": "method",
+        "constructor_declaration": "method",
+        "class_declaration": "class",
+        "struct_declaration": "type",
+        "interface_declaration": "type",
+        "enum_declaration": "type",
+        "namespace_declaration": "type",
+    },
+    name_fields={
+        "method_declaration": "name",
+        "constructor_declaration": "name",
+        "class_declaration": "name",
+        "struct_declaration": "name",
+        "interface_declaration": "name",
+        "enum_declaration": "name",
+        "namespace_declaration": "name",
+    },
+    param_fields={
+        "method_declaration": "parameters",
+        "constructor_declaration": "parameters",
+    },
+    return_type_fields={
+        "method_declaration": "returns",
+    },
+    docstring_strategy="preceding_comment",
+    decorator_node_type="attribute_list",
+    container_node_types=["class_declaration", "struct_declaration", "interface_declaration", "namespace_declaration"],
+    constant_patterns=["field_declaration"],
+    type_patterns=["class_declaration", "struct_declaration", "interface_declaration", "enum_declaration"],
+    call_node_types=["invocation_expression"],
+    import_node_types=["using_directive"],
+    inheritance_fields=["base_list"],
+    implementation_fields=["base_list"],
+)
+
+
+# Ruby specification
+RUBY_SPEC = LanguageSpec(
+    ts_language="ruby",
+    symbol_node_types={
+        "method": "function",
+        "singleton_method": "function",
+        "class": "class",
+        "module": "type",
+    },
+    name_fields={
+        "method": "name",
+        "singleton_method": "name",
+        "class": "name",
+        "module": "name",
+    },
+    param_fields={
+        "method": "parameters",
+        "singleton_method": "parameters",
+    },
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=["class", "module"],
+    constant_patterns=["assignment"],
+    type_patterns=["class", "module"],
+    call_node_types=["call"],
+    import_node_types=[],  # Ruby uses require() calls — not a distinct node type
+    inheritance_fields=["superclass"],
+)
+
+
+# Swift specification
+SWIFT_SPEC = LanguageSpec(
+    ts_language="swift",
+    symbol_node_types={
+        "function_declaration": "function",
+        "class_declaration": "class",
+        "protocol_declaration": "type",
+    },
+    name_fields={
+        "function_declaration": "name",
+        "class_declaration": "name",
+        "protocol_declaration": "name",
+    },
+    param_fields={},  # Swift parameters are positional children — partial extraction via signature
+    return_type_fields={},  # return type is after -> token, positional
+    docstring_strategy="preceding_comment",
+    decorator_node_type="attribute",
+    container_node_types=["class_declaration", "protocol_declaration"],
+    constant_patterns=["property_declaration"],
+    type_patterns=["class_declaration", "protocol_declaration"],
+    call_node_types=["call_expression"],
+    import_node_types=["import_declaration"],
+    inheritance_fields=["inheritance_specifier"],
+)
+
+
+# Kotlin specification
+KOTLIN_SPEC = LanguageSpec(
+    ts_language="kotlin",
+    symbol_node_types={
+        "function_declaration": "function",
+        "class_declaration": "class",
+        "object_declaration": "type",
+    },
+    name_fields={
+        "function_declaration": "name",
+        "class_declaration": "name",
+        "object_declaration": "name",
+    },
+    param_fields={},  # Kotlin parameters use function_value_parameters — partial extraction via signature
+    return_type_fields={},  # return type is positional
+    docstring_strategy="preceding_comment",
+    decorator_node_type="annotation",
+    container_node_types=["class_declaration", "object_declaration"],
+    constant_patterns=["property_declaration"],
+    type_patterns=["class_declaration", "object_declaration"],
+    call_node_types=["call_expression"],
+    import_node_types=["import_header"],
+    inheritance_fields=["delegation_specifiers"],
 )
 
 
@@ -286,4 +510,10 @@ LANGUAGE_REGISTRY = {
     "rust": RUST_SPEC,
     "java": JAVA_SPEC,
     "php": PHP_SPEC,
+    "c": C_SPEC,
+    "cpp": CPP_SPEC,
+    "c_sharp": CSHARP_SPEC,
+    "ruby": RUBY_SPEC,
+    "swift": SWIFT_SPEC,
+    "kotlin": KOTLIN_SPEC,
 }
