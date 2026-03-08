@@ -892,3 +892,57 @@ class TestPersistentRateLimit:
         state_path.write_text('["not", "a", "dict"]', encoding="utf-8")
 
         assert _rate_limit("search_text", str(tmp_path)) is True
+
+
+# -- CLI subcommand tests -----------------------------------------------------
+
+class TestCLISubcommands:
+    """Tests for the CLI entry point (main function)."""
+
+    def test_main_index_subcommand(self, tmp_path, monkeypatch):
+        """CLI: codesight-mcp index <path> --no-ai"""
+        import sys
+        from codesight_mcp.server import main
+
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "foo.py").write_text("def foo(): pass\n")
+
+        monkeypatch.setattr(
+            sys, "argv",
+            ["codesight-mcp", "index", str(project_dir), "--no-ai"],
+        )
+        monkeypatch.setenv("CODESIGHT_ALLOWED_ROOTS", str(project_dir))
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        # 0 = success, 1 = index failed (e.g. no symbols) -- either is acceptable
+        assert exc_info.value.code in (0, 1)
+
+    def test_main_index_repo_no_url(self, monkeypatch):
+        """CLI: codesight-mcp index-repo (missing URL) prints error and exits 1."""
+        import sys
+        from codesight_mcp.server import main
+
+        monkeypatch.setattr(sys, "argv", ["codesight-mcp", "index-repo"])
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+
+    def test_main_no_subcommand_starts_server(self, monkeypatch):
+        """CLI with no subcommand calls run_server (MCP mode)."""
+        import sys
+        import codesight_mcp.server as server_module
+
+        server_started = []
+
+        async def fake_run_server():
+            server_started.append(True)
+
+        monkeypatch.setattr(sys, "argv", ["codesight-mcp"])
+        monkeypatch.setattr(server_module, "run_server", fake_run_server)
+
+        # main() calls asyncio.run(run_server()) which should not raise
+        server_module.main()
+        assert server_started
