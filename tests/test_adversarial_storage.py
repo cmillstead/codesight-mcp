@@ -478,8 +478,10 @@ class TestSearchTextSecretRedaction:
         from ironmunch.parser.symbols import Symbol
 
         # sk- + 20 chars meets the _INLINE_SECRET_RE threshold of 20 chars after 'sk-'
+        # Use SK_KEY (not in the api_key= pattern list) so the variable name survives
+        # sanitization — only the sk-... value itself is replaced with <REDACTED>.
         secret = "sk-testkey12345678901234"
-        file_content = f'API_KEY = "{secret}"\n'
+        file_content = f'SK_KEY = "{secret}"\n'
 
         with tempfile.TemporaryDirectory() as tmp:
             store = IndexStore(tmp)
@@ -488,13 +490,13 @@ class TestSearchTextSecretRedaction:
             (content_dir / "config.py").write_text(file_content)
 
             sym = Symbol(
-                id="config.py::API_KEY#constant",
+                id="config.py::SK_KEY#constant",
                 file="config.py",
-                name="API_KEY",
-                qualified_name="API_KEY",
+                name="SK_KEY",
+                qualified_name="SK_KEY",
                 kind="constant",
                 language="python",
-                signature=f'API_KEY = "{secret}"',
+                signature=f'SK_KEY = "{secret}"',
                 line=1, end_line=1,
                 byte_offset=0,
                 byte_length=len(file_content.encode("utf-8")),
@@ -508,7 +510,14 @@ class TestSearchTextSecretRedaction:
                 languages={"python": 1},
             )
 
-            result = search_text(repo="test/repo", query="sk-", storage_path=tmp)
+            # Search by variable name — SK_KEY survives sanitization, only the sk-... value
+            # is replaced with <REDACTED>, so the result text shows SK_KEY = "<REDACTED>"
+            result = search_text(
+                repo="test/repo",
+                query="SK_KEY",
+                confirm_sensitive_search=True,
+                storage_path=tmp,
+            )
 
             assert result.get("result_count", 0) >= 1, "Expected at least one match"
             texts = [m["text"] for m in result["results"]]
@@ -550,7 +559,12 @@ class TestSearchTextSecretRedaction:
                 languages={"python": 1},
             )
 
-            result = search_text(repo="test/repo2", query="sk-short", storage_path=tmp)
+            result = search_text(
+                repo="test/repo2",
+                query="sk-short",
+                confirm_sensitive_search=True,
+                storage_path=tmp,
+            )
 
             assert result.get("result_count", 0) >= 1, "Expected at least one match"
             texts = [m["text"] for m in result["results"]]

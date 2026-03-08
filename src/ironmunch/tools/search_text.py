@@ -6,27 +6,25 @@ via crafted entries in the index's source_files list.
 """
 
 import fnmatch
-from pathlib import Path
 from typing import Optional
 
 from ..security import validate_file_access, sanitize_signature_for_api, safe_read_file
 from ..core.limits import MAX_SEARCH_RESULTS
 from ..core.boundaries import wrap_untrusted_content, make_meta
-from ..core.errors import sanitize_error, RepoNotFoundError
+from ..core.errors import RepoNotFoundError
 from ..core.validation import ValidationError
 from ..storage import IndexStore
 from ._common import parse_repo, timed, elapsed_ms
 
+_REDACTION_SENTINEL = "<REDACTED>"
 
-# NOTE: search_text performs substring matching over raw file contents,
-# including content not matching the inline secret patterns. A determined
-# caller can binary-search for arbitrary content (~1300 queries per 20-char token).
-# Mitigation: this tool requires an indexed repo; users control what gets indexed.
+
 def search_text(
     repo: str,
     query: str,
     file_pattern: Optional[str] = None,
     max_results: int = 20,
+    confirm_sensitive_search: bool = False,
     storage_path: Optional[str] = None,
 ) -> dict:
     """Search for text across all indexed files in a repository.
@@ -39,12 +37,25 @@ def search_text(
         query: Text to search for (case-insensitive substring match).
         file_pattern: Optional glob pattern to filter files.
         max_results: Maximum number of matching lines to return.
+        confirm_sensitive_search: Must be True to acknowledge text-search risk.
         storage_path: Custom storage path.
 
     Returns:
         Dict with matching lines grouped by file, plus _meta envelope.
     """
     start = timed()
+
+    if not confirm_sensitive_search:
+        return {
+            "error": (
+                "search_text requires confirm_sensitive_search=True because "
+                "full-text search can reveal indexed content."
+            )
+        }
+    if query.strip().upper() == _REDACTION_SENTINEL:
+        return {
+            "error": "Query targets internal redaction markers and is not allowed"
+        }
 
     # --- security gate: parse + validate repo identifier ---
     try:
@@ -88,7 +99,7 @@ def search_text(
             continue
 
         files_searched += 1
-        lines = content.split("\n")
+        lines = sanitize_signature_for_api(content).split("\n")
         for line_num, line in enumerate(lines, 1):
             if query_lower in line.lower():
                 matches.append({

@@ -15,6 +15,7 @@ from typing import Optional
 from ..parser.symbols import Symbol
 from ..security import sanitize_repo_identifier, sanitize_signature_for_api
 from ..core.limits import MAX_INDEX_SIZE, MAX_FILE_SIZE
+from ..core.locking import exclusive_file_lock
 from ..core.validation import validate_path, ValidationError, is_within
 
 # Bump this when the index schema changes in an incompatible way.
@@ -164,6 +165,12 @@ class IndexStore:
         sanitize_repo_identifier(name)
         return self.base_path / f"{owner}__{name}"
 
+    def _repo_lock_path(self, owner: str, name: str) -> Path:
+        """Path to the advisory lock file for a repository."""
+        sanitize_repo_identifier(owner)
+        sanitize_repo_identifier(name)
+        return self.base_path / f"{owner}__{name}.lock"
+
     def _atomic_write(self, final_path: Path, data: "bytes | str") -> None:
         """Write data to final_path atomically via a .tmp file.
 
@@ -217,69 +224,70 @@ class IndexStore:
         Returns:
             CodeIndex object.
         """
-        # Compute file hashes if not provided
-        if file_hashes is None:
-            file_hashes = {fp: _file_hash(content) for fp, content in raw_files.items()}
+        with exclusive_file_lock(self._repo_lock_path(owner, name)):
+            # Compute file hashes if not provided
+            if file_hashes is None:
+                file_hashes = {fp: _file_hash(content) for fp, content in raw_files.items()}
 
-        # Create index
-        index = CodeIndex(
-            repo=f"{owner}/{name}",
-            owner=owner,
-            name=name,
-            indexed_at=datetime.now().isoformat(),
-            source_files=source_files,
-            languages=languages,
-            symbols=[self._symbol_to_dict(s) for s in symbols],
-            index_version=INDEX_VERSION,
-            file_hashes=file_hashes,
-            git_head=git_head,
-        )
+            # Create index
+            index = CodeIndex(
+                repo=f"{owner}/{name}",
+                owner=owner,
+                name=name,
+                indexed_at=datetime.now().isoformat(),
+                source_files=source_files,
+                languages=languages,
+                symbols=[self._symbol_to_dict(s) for s in symbols],
+                index_version=INDEX_VERSION,
+                file_hashes=file_hashes,
+                git_head=git_head,
+            )
 
-        # Prepare content directory
-        content_dir = self._content_dir(owner, name)
-        _makedirs_0o700(str(content_dir))
+            # Prepare content directory
+            content_dir = self._content_dir(owner, name)
+            _makedirs_0o700(str(content_dir))
 
-        # Phase 1: write all content files to .tmp paths first so that any
-        # write failure leaves the existing index intact (no split state).
-        content_tmp_paths: list[tuple[Path, Path]] = []  # (final, tmp)
-        try:
-            for file_path, content in raw_files.items():
-                dest = (content_dir / file_path).resolve()
-                resolved_root = content_dir.resolve()
-                if not is_within(resolved_root, dest):
-                    continue  # Traversal — skip silently
-                _makedirs_0o700(str(dest.parent))
-                tmp_dest = dest.with_suffix(dest.suffix + ".tmp")
-                try:
-                    fd = os.open(
-                        str(tmp_dest),
-                        os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
-                        0o600,
-                    )
-                    with os.fdopen(fd, "w", encoding="utf-8") as f:
-                        f.write(content)
-                    content_tmp_paths.append((dest, tmp_dest))
-                except OSError:
-                    continue  # Symlink or permission error — skip
+            # Phase 1: write all content files to .tmp paths first so that any
+            # write failure leaves the existing index intact (no split state).
+            content_tmp_paths: list[tuple[Path, Path]] = []  # (final, tmp)
+            try:
+                for file_path, content in raw_files.items():
+                    dest = (content_dir / file_path).resolve()
+                    resolved_root = content_dir.resolve()
+                    if not is_within(resolved_root, dest):
+                        continue  # Traversal — skip silently
+                    _makedirs_0o700(str(dest.parent))
+                    tmp_dest = dest.with_suffix(dest.suffix + ".tmp")
+                    try:
+                        fd = os.open(
+                            str(tmp_dest),
+                            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+                            0o600,
+                        )
+                        with os.fdopen(fd, "w", encoding="utf-8") as f:
+                            f.write(content)
+                        content_tmp_paths.append((dest, tmp_dest))
+                    except OSError:
+                        continue  # Symlink or permission error — skip
 
-            # Phase 2: write the JSON index to its .tmp path
-            # NOTE: ENOSPC or other OS error here leaves Phase-1 content .tmp files orphaned.
-            # _cleanup_stale_temps() (called on next IndexStore.__init__) recovers them.
-            index_path = self._index_path(owner, name)
-            json_data = json.dumps(self._index_to_dict(index), indent=2)
-            self._atomic_write(index_path, json_data)
+                # Phase 2: write the JSON index to its .tmp path
+                # NOTE: ENOSPC or other OS error here leaves Phase-1 content .tmp files orphaned.
+                # _cleanup_stale_temps() (called on next IndexStore.__init__) recovers them.
+                index_path = self._index_path(owner, name)
+                json_data = json.dumps(self._index_to_dict(index), indent=2)
+                self._atomic_write(index_path, json_data)
 
-            # Phase 3: rename all content .tmp → final (after JSON succeeded)
-            for final, tmp in content_tmp_paths:
-                tmp.replace(final)
-            content_tmp_paths.clear()  # Mark all as renamed — nothing left to clean
+                # Phase 3: rename all content .tmp → final (after JSON succeeded)
+                for final, tmp in content_tmp_paths:
+                    tmp.replace(final)
+                content_tmp_paths.clear()  # Mark all as renamed — nothing left to clean
 
-        finally:
-            # Clean up any content .tmp files that were not yet renamed
-            for _final, tmp in content_tmp_paths:
-                tmp.unlink(missing_ok=True)
+            finally:
+                # Clean up any content .tmp files that were not yet renamed
+                for _final, tmp in content_tmp_paths:
+                    tmp.unlink(missing_ok=True)
 
-        return index
+            return index
 
     def load_index(self, owner: str, name: str) -> Optional[CodeIndex]:
         """Load index from storage. Rejects incompatible versions."""
@@ -504,100 +512,99 @@ class IndexStore:
         Returns:
             Updated CodeIndex, or None if no existing index.
         """
-        # NOTE: load-modify-write with no advisory lock. Two concurrent callers on the
-        # same repo may silently lose one set of changes. Acceptable for MCP stdio transport.
-        index = self.load_index(owner, name)
-        if not index:
-            return None
+        with exclusive_file_lock(self._repo_lock_path(owner, name)):
+            index = self.load_index(owner, name)
+            if not index:
+                return None
 
-        # Remove symbols for deleted and changed files
-        files_to_remove = set(deleted_files) | set(changed_files)
-        kept_symbols = [s for s in index.symbols if s.get("file") not in files_to_remove]
+            # Remove symbols for deleted and changed files
+            files_to_remove = set(deleted_files) | set(changed_files)
+            kept_symbols = [s for s in index.symbols if s.get("file") not in files_to_remove]
 
-        # Add new symbols
-        all_symbols_dicts = kept_symbols + [self._symbol_to_dict(s) for s in new_symbols]
+            # Add new symbols
+            all_symbols_dicts = kept_symbols + [self._symbol_to_dict(s) for s in new_symbols]
 
-        # Update source files list
-        old_files = set(index.source_files)
-        for f in deleted_files:
-            old_files.discard(f)
-        for f in new_files:
-            old_files.add(f)
-        for f in changed_files:
-            old_files.add(f)
+            # Update source files list
+            old_files = set(index.source_files)
+            for f in deleted_files:
+                old_files.discard(f)
+            for f in new_files:
+                old_files.add(f)
+            for f in changed_files:
+                old_files.add(f)
 
-        # Update file hashes
-        file_hashes = dict(index.file_hashes)
-        for f in deleted_files:
-            file_hashes.pop(f, None)
-        for fp, content in raw_files.items():
-            file_hashes[fp] = _file_hash(content)
-
-        # Build updated index
-        updated = CodeIndex(
-            repo=f"{owner}/{name}",
-            owner=owner,
-            name=name,
-            indexed_at=datetime.now().isoformat(),
-            source_files=sorted(old_files),
-            languages=languages,
-            symbols=all_symbols_dicts,
-            index_version=INDEX_VERSION,
-            file_hashes=file_hashes,
-            git_head=git_head,
-        )
-
-        # Prepare content directory
-        content_dir = self._content_dir(owner, name)
-        _makedirs_0o700(str(content_dir))
-        resolved_root = content_dir.resolve()
-
-        # Phase 1: write changed + new content files to .tmp paths first so
-        # that any write failure leaves the existing index intact (no split state).
-        content_tmp_paths: list[tuple[Path, Path]] = []  # (final, tmp)
-        try:
+            # Update file hashes
+            file_hashes = dict(index.file_hashes)
+            for f in deleted_files:
+                file_hashes.pop(f, None)
             for fp, content in raw_files.items():
-                dest = (content_dir / fp).resolve()
-                if not is_within(resolved_root, dest):
-                    continue  # Traversal — skip silently
-                _makedirs_0o700(str(dest.parent))
-                tmp_dest = dest.with_suffix(dest.suffix + ".tmp")
-                try:
-                    fd = os.open(
-                        str(tmp_dest),
-                        os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
-                        0o600,
-                    )
-                    with os.fdopen(fd, "w", encoding="utf-8") as f:
-                        f.write(content)
-                    content_tmp_paths.append((dest, tmp_dest))
-                except OSError:
-                    continue  # Symlink or permission error — skip
+                file_hashes[fp] = _file_hash(content)
 
-            # Phase 2: write the updated JSON index to its .tmp path
-            index_path = self._index_path(owner, name)
-            json_data = json.dumps(self._index_to_dict(updated), indent=2)
-            self._atomic_write(index_path, json_data)
+            # Build updated index
+            updated = CodeIndex(
+                repo=f"{owner}/{name}",
+                owner=owner,
+                name=name,
+                indexed_at=datetime.now().isoformat(),
+                source_files=sorted(old_files),
+                languages=languages,
+                symbols=all_symbols_dicts,
+                index_version=INDEX_VERSION,
+                file_hashes=file_hashes,
+                git_head=git_head,
+            )
 
-            # Phase 3: remove deleted files from content dir (containment-validated)
-            for fp in deleted_files:
-                dead = (content_dir / fp).resolve()
-                if not is_within(resolved_root, dead):
-                    continue  # Traversal — skip silently
-                if dead.exists():
-                    dead.unlink()
+            # Prepare content directory
+            content_dir = self._content_dir(owner, name)
+            _makedirs_0o700(str(content_dir))
+            resolved_root = content_dir.resolve()
 
-            # Phase 4: rename all content .tmp → final (after JSON succeeded)
-            for final, tmp in content_tmp_paths:
-                tmp.replace(final)
-            content_tmp_paths.clear()  # Mark all as renamed — nothing left to clean
+            # Phase 1: write changed + new content files to .tmp paths first so
+            # that any write failure leaves the existing index intact (no split state).
+            content_tmp_paths: list[tuple[Path, Path]] = []  # (final, tmp)
+            try:
+                for fp, content in raw_files.items():
+                    dest = (content_dir / fp).resolve()
+                    if not is_within(resolved_root, dest):
+                        continue  # Traversal — skip silently
+                    _makedirs_0o700(str(dest.parent))
+                    tmp_dest = dest.with_suffix(dest.suffix + ".tmp")
+                    try:
+                        fd = os.open(
+                            str(tmp_dest),
+                            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+                            0o600,
+                        )
+                        with os.fdopen(fd, "w", encoding="utf-8") as f:
+                            f.write(content)
+                        content_tmp_paths.append((dest, tmp_dest))
+                    except OSError:
+                        continue  # Symlink or permission error — skip
 
-        finally:
-            # Clean up any content .tmp files that were not yet renamed
-            for _final, tmp in content_tmp_paths:
-                tmp.unlink(missing_ok=True)
+                # Phase 2: write the updated JSON index to its .tmp path
+                index_path = self._index_path(owner, name)
+                json_data = json.dumps(self._index_to_dict(updated), indent=2)
+                self._atomic_write(index_path, json_data)
 
-        return updated
+                # Phase 3: remove deleted files from content dir (containment-validated)
+                for fp in deleted_files:
+                    dead = (content_dir / fp).resolve()
+                    if not is_within(resolved_root, dead):
+                        continue  # Traversal — skip silently
+                    if dead.exists():
+                        dead.unlink()
+
+                # Phase 4: rename all content .tmp → final (after JSON succeeded)
+                for final, tmp in content_tmp_paths:
+                    tmp.replace(final)
+                content_tmp_paths.clear()  # Mark all as renamed — nothing left to clean
+
+            finally:
+                # Clean up any content .tmp files that were not yet renamed
+                for _final, tmp in content_tmp_paths:
+                    tmp.unlink(missing_ok=True)
+
+            return updated
 
     def list_repos(self) -> list[dict]:
         """List all indexed repositories."""
@@ -641,24 +648,22 @@ class IndexStore:
         index_path = self._index_path(owner, name)
         content_dir = self._content_dir(owner, name)
 
-        deleted = False
+        with exclusive_file_lock(self._repo_lock_path(owner, name)):
+            deleted = False
 
-        # NOTE: delete_index is non-atomic (unlink JSON, then rmtree content).
-        # A concurrent save_index can interleave here, resulting in a partially-deleted
-        # or hollow index. Acceptable given single-process MCP stdio transport.
-        if index_path.exists():
-            index_path.unlink()
-            deleted = True
+            if index_path.exists():
+                index_path.unlink()
+                deleted = True
 
-        if content_dir.is_symlink():
-            # Symlink to another directory — remove the link, not the target
-            content_dir.unlink()
-            deleted = True
-        elif content_dir.exists():
-            shutil.rmtree(content_dir)
-            deleted = True
+            if content_dir.is_symlink():
+                # Symlink to another directory — remove the link, not the target
+                content_dir.unlink()
+                deleted = True
+            elif content_dir.exists():
+                shutil.rmtree(content_dir)
+                deleted = True
 
-        return deleted
+            return deleted
 
     def _safe_write_content(self, content_dir: Path, file_path: str, content: str) -> bool:
         """Write a file to the content directory after validating the path.

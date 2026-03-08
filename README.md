@@ -12,7 +12,7 @@ Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gra
 - **6-step path validation chain** -- null bytes, traversal, limits, resolution, containment, symlinks
 - **Content boundary markers** -- indirect prompt injection defense based on Microsoft spotlighting research
 - **Error sanitization** -- raw exceptions never reach the AI; system paths are always stripped
-- **49 adversarial security tests** -- real temp directories, no mocking
+- **664 tests** -- adversarial, security, integration, and unit coverage with real temp directories
 - **Local + GitHub repository indexing** -- index folders on disk or fetch from GitHub
 
 ## Installation
@@ -92,7 +92,7 @@ exploration instead of reading full files:
 - `get_file_outline` — all symbols in a file with signatures
 - `get_symbol` — full source of a specific symbol
 - `get_repo_outline` — directory structure and language breakdown
-- `search_text` — full-text search across all files
+- `search_text` — full-text search across indexed files (requires `confirm_sensitive_search=True`; runs on redacted content)
 
 Use `Read` only for content that isn't a named symbol (config files, etc).
 ```
@@ -169,7 +169,7 @@ ironmunch exposes 11 MCP tools:
 | `get_symbol` | Full source code of a specific symbol (byte-offset retrieval) |
 | `get_symbols` | Batch retrieval of multiple symbols in one call |
 | `search_symbols` | Search symbols by name, signature, summary, or docstring |
-| `search_text` | Full-text search across indexed file contents |
+| `search_text` | Full-text search across indexed file contents; requires `confirm_sensitive_search=True` and matches against redacted content |
 | `invalidate_cache` | Delete an index to force full re-index |
 
 ## Environment Variables

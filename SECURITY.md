@@ -23,14 +23,14 @@ The threat model assumes:
 | Path traversal via poisoned index | Validate file paths from index at retrieval time, not just at index time |
 | Symlink escape | 3-layer defense: lstat-based filtering during discovery, parent chain walk during validation, `follow_symlinks=False` default, O_NOFOLLOW on all file opens |
 | Repository identifier injection | Allowlist pattern (`[a-zA-Z0-9._-]`) with `\Z` anchor and length cap; slashes normalized to `__` |
-| Resource exhaustion | Bounded limits on file size, file count, path length, directory depth, search results, index size, batch count, and gitignore patterns |
+| Resource exhaustion | Bounded limits on file size, file count, path length, directory depth, search results, index size, batch count, gitignore patterns, and persistent rate limits |
 | Information leakage | Error sanitization: ValidationError messages are pre-approved safe strings, known errnos map to safe messages, unknown errors return a generic fallback, system paths stripped, parse failure warnings aggregate counts (not paths) |
 | Indirect prompt injection | Content boundary markers with cryptographic random tokens (Microsoft spotlighting) on all untrusted fields; injection phrase detection in summaries; tool descriptions carry explicit warnings |
-| Secret exposure in index | Pattern detection at index time: files matching secret patterns excluded; inline secret regex redacts tokens from signatures/docstrings/source |
+| Secret exposure in index | Pattern detection at index time: files matching secret patterns excluded; inline secret regex redacts supported token formats from signatures/docstrings/source |
 | Secret exposure via control chars | assert_no_control_chars rejects bytes 0x01–0x1F, 0x7F (DEL), and 0x80–0x9F (C1) |
 | Binary confusion | Dual-stage detection: extension-based filtering plus null-byte content sniffing |
 | Credential logging | _RedactAuthFilter suppresses httpx log records containing auth headers at all log levels |
-| Supply chain | uv.lock pinned with hashes; CI uses `--frozen --verify-hashes`; GitHub Actions SHA-pinned |
+| Supply chain | `uv.lock` pinned with hashes; CI uses `uv sync --frozen --verify-hashes`; GitHub Actions are SHA-pinned |
 | Summarizer injection | Injection phrases stripped from summaries (full substring scan, not prefix-only); degraded-mode parse returns empty on missing end marker |
 
 ## Validation Chain
@@ -93,16 +93,18 @@ Files matching `_SECRET_FILE_PATTERNS` (`.env`, `*_key`, `*.pem`, `id_rsa`, etc.
 
 The `sanitize_signature_for_api()` function applies `_INLINE_SECRET_RE` to signatures, docstrings, and source code. Patterns cover:
 
-- API keys: `sk_live_`, `sk_test_`, `sk-`, `xoxb-`, `xoxp-`
-- Bearer tokens, JWT headers (`eyJ`)
+- API keys: `sk_live_`, `sk-`, `xoxb-`, `xoxp-`
+- Bearer tokens
 - AWS keys (`AKIA`), GCP keys (`AIza`), HuggingFace (`hf_`), npm (`npm_`), PyPI (`pypi-`)
 - Passwords and credentials in common `key=value` patterns
 
-Matched secrets are replaced with `[REDACTED]`.
+Matched secrets are replaced with `<REDACTED>`.
+
+`search_text` runs matching against redacted file content, not raw file bytes, requires `confirm_sensitive_search=True`, and rejects queries for the internal redaction marker `<REDACTED>`.
 
 ## Rate Limiting
 
-All tools are rate-limited at 60 calls per minute per tool and 120 calls per minute globally (in-process). The limits are enforced at the dispatcher level in `server.py` via `_sanitize_arguments()` before any tool logic runs.
+All tools are rate-limited at 60 calls per minute per tool and 300 calls per minute globally. The limits are enforced at the dispatcher level in `server.py` using a persistent file-backed sliding window stored under the index directory, so they survive process restarts. If the default home-directory state path is unavailable, the server falls back to a private per-user temp directory.
 
 ## Input Sanitization
 
@@ -121,9 +123,11 @@ All tools are rate-limited at 60 calls per minute per tool and 120 calls per min
 - Directory permissions: `0o700` (owner-only access)
 - Index writes use 3-phase atomic write: content files first, then JSON `.tmp`, then rename
 - `O_NOFOLLOW` on all file reads and writes to prevent symlink races
-- `init_storage_root()` is immutable after first call — cannot be redirected mid-session
 - `load_index()` validates schema: required fields, type checks, element-level type checks on symbol arrays
 - `IRONMUNCH_ALLOWED_ROOTS`: colon-separated allowlist; colons within paths are rejected
+- Per-repository advisory lock files serialize `save_index()`, `incremental_save()`, and `delete_index()`
+- Auxiliary state directories reject symlinks and are forced to `0o700`
+- Persistent rate-limit lock/state files use no-follow opens and atomic writes
 
 ## Summarizer Security
 
@@ -147,11 +151,11 @@ All tools are rate-limited at 60 calls per minute per tool and 120 calls per min
 | Scan-04e | 2026-03-04e | 16 fixed | +25 |
 | Adversarial (2nd round) | 2026-03-04 | 30 fixed | +49 |
 | Adversarial (3rd round) | 2026-03-04b | 23 findings (fixes pending) | — |
-| **Total** | | | **579 tests** |
+| **Total** | | | **664 tests** |
 
 ## Testing
 
-The test suite contains **579 tests** across adversarial, security, integration, and unit categories covering:
+The test suite contains **664 tests** across adversarial, security, integration, and unit categories covering:
 
 - Control character and DEL byte injection in paths, repo IDs, and queries
 - `../` traversal in direct arguments and via poisoned index entries

@@ -1,9 +1,16 @@
 """Server tests -- tool listing, schema validation, and description warnings."""
 
-import pytest
 import json
+from pathlib import Path
 
-from ironmunch.server import server, list_tools, call_tool
+import pytest
+
+from ironmunch.server import (
+    _rate_limit,
+    call_tool,
+    list_tools,
+    server,
+)
 
 
 @pytest.mark.asyncio
@@ -53,6 +60,21 @@ async def test_search_symbols_tool_schema():
     assert set(props["kind"]["enum"]) == {"function", "class", "method", "constant", "type"}
 
 
+@pytest.mark.asyncio
+async def test_search_text_tool_schema():
+    """Test search_text tool has the confirmation field in its schema."""
+    tools = await list_tools()
+
+    search = next(t for t in tools if t.name == "search_text")
+
+    props = search.inputSchema["properties"]
+    assert "repo" in props
+    assert "query" in props
+    assert "file_pattern" in props
+    assert "max_results" in props
+    assert "confirm_sensitive_search" in props
+
+
 # -- Description warning tests ------------------------------------------------
 
 @pytest.mark.asyncio
@@ -83,6 +105,15 @@ async def test_indexing_tools_have_consent_warning():
             assert "explicitly asked to index" in tool.description, (
                 f"{tool.name} missing explicit-consent warning"
             )
+
+
+@pytest.mark.asyncio
+async def test_search_text_has_explicit_confirmation_warning():
+    """search_text must require explicit confirmation in its description."""
+    tools = await list_tools()
+    search_text_tool = next(t for t in tools if t.name == "search_text")
+
+    assert "confirm_sensitive_search=True" in search_text_tool.description
 
 
 @pytest.mark.asyncio
@@ -167,6 +198,15 @@ class TestCallToolInputBounds:
         assert "empty" in text.lower()
 
     @pytest.mark.asyncio
+    async def test_search_text_requires_confirmation(self):
+        result = await call_tool("search_text", {
+            "repo": "test/repo",
+            "query": "needle",
+        })
+        text = result[0].text
+        assert "confirm_sensitive_search" in text
+
+    @pytest.mark.asyncio
     async def test_symbol_ids_list_capped(self):
         result = await call_tool("get_symbols", {
             "repo": "test/repo",
@@ -199,6 +239,14 @@ class TestCallToolInputBounds:
         result = _sanitize_arguments("index_folder", args)
         assert isinstance(result, dict)
         assert result["follow_symlinks"] is True
+
+    def test_search_confirmation_bool_preserved(self):
+        """confirm_sensitive_search must preserve a real boolean."""
+        from ironmunch.server import _sanitize_arguments
+        args = {"query": "x", "confirm_sensitive_search": True}
+        result = _sanitize_arguments("search_text", args)
+        assert isinstance(result, dict)
+        assert result["confirm_sensitive_search"] is True
 
     def test_symbol_ids_oversized_items_filtered(self):
         """SEC-LOW-3: oversized symbol_ids must be filtered."""
@@ -309,40 +357,31 @@ class TestCallToolInputBounds:
 class TestRateLimiting:
     """M-5: Rate limiting prevents tool call flooding."""
 
-    def test_rate_limit_applied(self):
+    def test_rate_limit_applied(self, tmp_path):
         """Excessive calls to the same tool should be rate-limited."""
-        from ironmunch.server import _rate_limit, _CALL_TIMESTAMPS
-        # Clear any prior state
-        _CALL_TIMESTAMPS.clear()
         blocked = 0
         for _ in range(100):
-            if not _rate_limit("test_tool"):
+            if not _rate_limit("test_tool", str(tmp_path)):
                 blocked += 1
         assert blocked > 0, "Rate limiting never kicked in"
 
-    def test_rate_limit_allows_normal_usage(self):
+    def test_rate_limit_allows_normal_usage(self, tmp_path):
         """A few calls should not be blocked."""
-        from ironmunch.server import _rate_limit, _CALL_TIMESTAMPS
-        _CALL_TIMESTAMPS.clear()
         for _ in range(5):
-            assert _rate_limit("normal_tool") is True
+            assert _rate_limit("normal_tool", str(tmp_path)) is True
 
-    def test_global_rate_limit_blocks_after_limit_reached(self):
-        """Filling _GLOBAL_TIMESTAMPS to the global cap must block the next call."""
-        import time
-        import ironmunch.server as server_module
-        from ironmunch.server import _rate_limit, _MAX_GLOBAL_CALLS_PER_MINUTE
+    def test_global_rate_limit_blocks_after_limit_reached(self, tmp_path):
+        """Filling the persisted global bucket to the cap must block the next call."""
+        from ironmunch.server import _MAX_GLOBAL_CALLS_PER_MINUTE
 
-        # Clear all rate limit state to start fresh
-        server_module._GLOBAL_TIMESTAMPS.clear()
-        server_module._CALL_TIMESTAMPS.clear()
+        state_path = tmp_path / ".rate_limits.json"
+        now = 2_000_000_000.0
+        state_path.write_text(json.dumps({
+            "global": [now] * _MAX_GLOBAL_CALLS_PER_MINUTE,
+            "tools": {},
+        }), encoding="utf-8")
 
-        # Pack _GLOBAL_TIMESTAMPS with recent timestamps (within the 60-second window)
-        now = time.time()
-        server_module._GLOBAL_TIMESTAMPS[:] = [now] * _MAX_GLOBAL_CALLS_PER_MINUTE
-
-        # The next call must be blocked by the global limit
-        result = _rate_limit("some_known_tool")
+        result = _rate_limit("some_known_tool", str(tmp_path))
         assert result is False, (
             "Expected _rate_limit to return False when global limit is full"
         )
@@ -354,12 +393,10 @@ class TestUnknownToolRejectedBeforeRateLimit:
     """SEC-HIGH-1: Unknown tool names must be rejected before rate limiting."""
 
     @pytest.mark.asyncio
-    async def test_unknown_tool_returns_error_and_does_not_consume_global_slot(self):
-        """Calling an unknown tool returns an error AND does not touch _GLOBAL_TIMESTAMPS."""
+    async def test_unknown_tool_returns_error_and_does_not_create_rate_limit_state(self, monkeypatch, tmp_path):
+        """Calling an unknown tool must not create persistent rate-limit state."""
         import ironmunch.server as server_module
-        # Clear global rate limit state so we start fresh
-        server_module._GLOBAL_TIMESTAMPS.clear()
-        server_module._CALL_TIMESTAMPS.clear()
+        monkeypatch.setattr(server_module, "_rate_limit_state_dir", lambda _storage: tmp_path)
 
         result = await call_tool("totally_fake_tool", {})
 
@@ -369,27 +406,18 @@ class TestUnknownToolRejectedBeforeRateLimit:
         assert "error" in payload
         assert "totally_fake_tool" in payload["error"]
 
-        # Must NOT have consumed any global rate limit slot
-        assert len(server_module._GLOBAL_TIMESTAMPS) == 0, (
-            "Unknown tool call must not increment _GLOBAL_TIMESTAMPS"
-        )
+        assert not (tmp_path / ".rate_limits.json").exists()
 
     @pytest.mark.asyncio
-    async def test_many_fake_tool_calls_do_not_exhaust_global_rate_limit(self):
-        """Flooding with fabricated tool names must not fill _GLOBAL_TIMESTAMPS."""
+    async def test_many_fake_tool_calls_do_not_create_rate_limit_state(self, monkeypatch, tmp_path):
+        """Flooding unknown tool names must not create rate-limit state."""
         import ironmunch.server as server_module
-        server_module._GLOBAL_TIMESTAMPS.clear()
-        server_module._CALL_TIMESTAMPS.clear()
+        monkeypatch.setattr(server_module, "_rate_limit_state_dir", lambda _storage: tmp_path)
 
-        # Simulate many fake tool calls (well above the global limit of 120)
         for i in range(150):
             await call_tool(f"fake_tool_{i}", {})
 
-        # Global timestamps must remain empty — no slots were consumed
-        assert len(server_module._GLOBAL_TIMESTAMPS) == 0, (
-            f"Expected 0 global timestamps after fake calls, "
-            f"got {len(server_module._GLOBAL_TIMESTAMPS)}"
-        )
+        assert not (tmp_path / ".rate_limits.json").exists()
 
 
 # -- SEC-LOW-4: path_prefix validation in get_file_tree -----------------------
@@ -788,3 +816,77 @@ class TestCodeIndexPathReadOnce:
             f"_CODE_INDEX_PATH changed after env mutation: "
             f"was {frozen!r}, now {server_module._CODE_INDEX_PATH!r}"
         )
+
+
+class TestPersistentRateLimit:
+    """Persistent rate-limit state must survive across helper calls."""
+
+    def test_rate_limit_writes_state_file(self, tmp_path):
+        assert _rate_limit("search_text", str(tmp_path)) is True
+
+        state_path = Path(tmp_path) / ".rate_limits.json"
+        assert state_path.exists(), "Rate-limit state file was not created"
+
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        assert "global" in data
+        assert "search_text" in data.get("tools", {})
+
+    def test_rate_limit_rejects_symlink_lock_file(self, tmp_path):
+        target = tmp_path / "outside.lock"
+        target.write_text("decoy", encoding="utf-8")
+        (tmp_path / ".rate_limits.lock").symlink_to(target)
+
+        with pytest.raises(OSError):
+            _rate_limit("search_text", str(tmp_path))
+
+    def test_rate_limit_rejects_symlink_tmp_state_file(self, tmp_path):
+        target = tmp_path / "outside.json"
+        target.write_text("decoy", encoding="utf-8")
+        (tmp_path / ".rate_limits.json.tmp").symlink_to(target)
+
+        with pytest.raises(OSError):
+            _rate_limit("search_text", str(tmp_path))
+
+    def test_rate_limit_temp_fallback_is_private_per_user(self, monkeypatch, tmp_path):
+        import ironmunch.server as server_module
+
+        real_ensure = server_module.ensure_private_dir
+        home_dir = Path.home() / ".code-index"
+
+        def fake_ensure(path):
+            p = Path(path)
+            if p == home_dir:
+                raise OSError("deny home dir")
+            return real_ensure(p)
+
+        monkeypatch.setattr(server_module, "ensure_private_dir", fake_ensure)
+
+        fallback = server_module._rate_limit_state_dir(None)
+        assert "ironmunch-rate-limits-" in fallback.name
+
+    def test_rate_limit_rejects_symlink_state_dir(self, tmp_path):
+        real_dir = tmp_path / "real"
+        real_dir.mkdir()
+        link_dir = tmp_path / "link"
+        link_dir.symlink_to(real_dir)
+
+        with pytest.raises(OSError):
+            _rate_limit("search_text", str(link_dir))
+
+    def test_rate_limit_oversized_state_file_resets_safely(self, tmp_path):
+        from ironmunch.core.limits import MAX_INDEX_SIZE
+
+        state_path = tmp_path / ".rate_limits.json"
+        state_path.write_text("x" * (MAX_INDEX_SIZE + 1), encoding="utf-8")
+
+        assert _rate_limit("search_text", str(tmp_path)) is True
+
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        assert "global" in data
+        assert "search_text" in data.get("tools", {})
+
+    def test_rate_limit_non_dict_state_resets_safely(self, tmp_path):
+        state_path = tmp_path / ".rate_limits.json"
+        state_path.write_text('["not", "a", "dict"]', encoding="utf-8")
+
+        assert _rate_limit("search_text", str(tmp_path)) is True
