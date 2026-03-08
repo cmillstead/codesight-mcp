@@ -12,14 +12,15 @@ Ported from jcodemunch-mcp with three hardening layers:
 import asyncio
 import json
 import os
+import tempfile
 import time
-from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 
+from .core.locking import atomic_write_nofollow, ensure_private_dir, exclusive_file_lock
 from .tools.index_repo import index_repo
 from .tools.index_folder import index_folder
 from .tools.list_repos import list_repos
@@ -33,7 +34,7 @@ from .tools.get_repo_outline import get_repo_outline
 from .core.errors import sanitize_error
 from .core.limits import (
     MAX_ARGUMENT_LENGTH, MAX_BATCH_SYMBOLS, MAX_FILE_PATTERN_LENGTH,
-    MAX_CONTEXT_LINES, MAX_SEARCH_RESULTS,
+    MAX_CONTEXT_LINES, MAX_SEARCH_RESULTS, MAX_INDEX_SIZE,
 )
 
 # ADV-LOW-7: Read CODE_INDEX_PATH once at startup so subsequent env mutations
@@ -66,6 +67,11 @@ _INDEX_WARNING = (
 
 _DESTRUCTIVE_WARNING = (
     " Only call when the user has explicitly asked to delete an index."
+)
+
+_TEXT_SEARCH_WARNING = (
+    " Only call when the user has explicitly asked to search indexed file"
+    " contents and confirm_sensitive_search=True."
 )
 
 
@@ -315,6 +321,7 @@ async def list_tools() -> list[Tool]:
                 "Full-text search across indexed file contents. Useful when "
                 "symbol search misses (e.g., string literals, comments, "
                 "config values)."
+                + _TEXT_SEARCH_WARNING
                 + _UNTRUSTED_WARNING
             ),
             inputSchema={
@@ -336,6 +343,11 @@ async def list_tools() -> list[Tool]:
                         "type": "integer",
                         "description": "Maximum number of matching lines to return",
                         "default": 20
+                    },
+                    "confirm_sensitive_search": {
+                        "type": "boolean",
+                        "description": "Must be true to acknowledge that full-text search can reveal indexed content.",
+                        "default": False
                     }
                 },
                 "required": ["repo", "query"]
@@ -369,32 +381,72 @@ KNOWN_TOOLS = frozenset({
     "invalidate_cache", "search_text", "get_repo_outline",
 })
 
-# Rate limiting — per-tool sliding window
-# TODO(security): ADV-MED-1 — Rate limit state is in-process only and resets on server
-# restart. An attacker who can trigger restarts (e.g., crash-restart loop) gets a
-# fresh window on each restart. Full fix requires a persistent token-bucket backed by
-# an atomic file write or shared-memory counter, which is deferred as out of scope.
-_CALL_TIMESTAMPS: dict[str, list[float]] = defaultdict(list)
+# Rate limiting — persistent file-backed sliding window
 _MAX_CALLS_PER_MINUTE: int = 60
-_GLOBAL_TIMESTAMPS: list[float] = []
 _MAX_GLOBAL_CALLS_PER_MINUTE: int = 300
+_RATE_WINDOW_SECONDS: int = 60
 
 
-def _rate_limit(tool_name: str) -> bool:
-    """Check if a tool call is within rate limits. Returns True if allowed."""
+def _rate_limit_state_dir(storage_path: str | None) -> Path:
+    """Directory where persistent rate-limit state lives."""
+    if storage_path is not None:
+        return ensure_private_dir(storage_path)
+    default_dir = Path.home() / ".code-index"
+    try:
+        ensure_private_dir(default_dir)
+        probe = default_dir / ".rate_limit_probe"
+        atomic_write_nofollow(probe, "")
+        probe.unlink(missing_ok=True)
+        return default_dir
+    except OSError:
+        uid = getattr(os, "getuid", lambda: None)()
+        suffix = str(uid) if uid is not None else os.environ.get("USER", "unknown")
+        return ensure_private_dir(Path(tempfile.gettempdir()) / f"ironmunch-rate-limits-{suffix}")
+
+
+def _rate_limit(tool_name: str, storage_path: str | None) -> bool:
+    """Check a persistent rate limit bucket. Returns True if allowed."""
+    state_dir = _rate_limit_state_dir(storage_path)
+    lock_path = state_dir / ".rate_limits.lock"
+    state_path = state_dir / ".rate_limits.json"
     now = time.time()
-    # Global limit
-    _GLOBAL_TIMESTAMPS[:] = [t for t in _GLOBAL_TIMESTAMPS if now - t < 60]
-    if len(_GLOBAL_TIMESTAMPS) >= _MAX_GLOBAL_CALLS_PER_MINUTE:
-        return False
-    # Per-tool limit
-    timestamps = _CALL_TIMESTAMPS[tool_name]
-    timestamps[:] = [t for t in timestamps if now - t < 60]
-    if len(timestamps) >= _MAX_CALLS_PER_MINUTE:
-        return False
-    timestamps.append(now)
-    _GLOBAL_TIMESTAMPS.append(now)
-    return True
+
+    with exclusive_file_lock(lock_path):
+        try:
+            if state_path.stat().st_size > MAX_INDEX_SIZE:
+                data = {}
+            else:
+                data = json.loads(state_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+
+        global_timestamps = [
+            float(t)
+            for t in data.get("global", [])
+            if isinstance(t, (int, float)) and now - float(t) < _RATE_WINDOW_SECONDS
+        ]
+        tool_map = data.get("tools", {})
+        if not isinstance(tool_map, dict):
+            tool_map = {}
+        tool_timestamps = [
+            float(t)
+            for t in tool_map.get(tool_name, [])
+            if isinstance(t, (int, float)) and now - float(t) < _RATE_WINDOW_SECONDS
+        ]
+
+        if len(global_timestamps) >= _MAX_GLOBAL_CALLS_PER_MINUTE:
+            return False
+        if len(tool_timestamps) >= _MAX_CALLS_PER_MINUTE:
+            return False
+
+        global_timestamps.append(now)
+        tool_timestamps.append(now)
+        tool_map[tool_name] = tool_timestamps
+        state = {"global": global_timestamps, "tools": tool_map}
+        atomic_write_nofollow(state_path, json.dumps(state))
+        return True
 
 
 def _sanitize_arguments(name: str, arguments: dict) -> dict | str:
@@ -420,7 +472,10 @@ def _sanitize_arguments(name: str, arguments: dict) -> dict | str:
         ]
 
     # Coerce boolean flags
-    for flag in ("follow_symlinks", "use_ai_summaries", "verify", "confirm"):
+    for flag in (
+        "follow_symlinks", "use_ai_summaries", "verify", "confirm",
+        "confirm_sensitive_search",
+    ):
         if flag in arguments and not isinstance(arguments[flag], bool):
             arguments[flag] = arguments[flag] in (True, 1)
 
@@ -486,13 +541,17 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text=json.dumps({"error": sanitized}))]
     arguments = sanitized
 
-    if not _rate_limit(name):
+    try:
+        storage_path = _validate_storage_path(_CODE_INDEX_PATH or None)
+    except Exception as e:
+        return [TextContent(type="text", text=json.dumps({"error": sanitize_error(e)}))]
+
+    if not _rate_limit(name, storage_path):
         return [TextContent(type="text", text=json.dumps({
             "error": "Rate limit exceeded. Try again in a moment."
         }))]
 
     try:
-        storage_path = _validate_storage_path(_CODE_INDEX_PATH or None)
         if name == "index_repo":
             result = await index_repo(
                 url=arguments["url"],
@@ -559,6 +618,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 query=arguments["query"],
                 file_pattern=arguments.get("file_pattern"),
                 max_results=arguments.get("max_results", 20),
+                confirm_sensitive_search=arguments.get("confirm_sensitive_search", False),
                 storage_path=storage_path
             )
         elif name == "get_repo_outline":

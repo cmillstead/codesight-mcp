@@ -397,7 +397,12 @@ class TestQueryEchoSanitization:
                 languages={"python": 1},
             )
             query = "sk_live_" + "a" * 24
-            result = search_text(repo="local/qtest", query=query, storage_path=storage)
+            result = search_text(
+                repo="local/qtest",
+                query=query,
+                confirm_sensitive_search=True,
+                storage_path=storage,
+            )
             assert "query" in result
             assert "sk_live_" not in result["query"], f"Secret in query echo: {result['query']!r}"
 

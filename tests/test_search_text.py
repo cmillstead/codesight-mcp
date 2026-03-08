@@ -46,7 +46,8 @@ class TestSearchTextFileSpotlighting:
                 file_content="def helper():\n    return True\n",
             )
             result = search_text(
-                repo="owner/repo", query="helper", storage_path=tmp
+                repo="owner/repo", query="helper",
+                confirm_sensitive_search=True, storage_path=tmp
             )
 
             assert "error" not in result
@@ -68,6 +69,7 @@ class TestSearchTextFileSpotlighting:
             result = search_text(
                 repo="owner/repo2",
                 query="ignore_previous",
+                confirm_sensitive_search=True,
                 storage_path=tmp,
             )
 
@@ -88,7 +90,8 @@ class TestSearchTextFileSpotlighting:
                 file_content="MY_CONST = 42\n",
             )
             result = search_text(
-                repo="owner/repo3", query="MY_CONST", storage_path=tmp
+                repo="owner/repo3", query="MY_CONST",
+                confirm_sensitive_search=True, storage_path=tmp
             )
 
             assert "error" not in result
@@ -108,7 +111,8 @@ class TestSearchTextFileSpotlighting:
                 file_content="result = compute()\n",
             )
             result = search_text(
-                repo="owner/repo4", query="compute", storage_path=tmp
+                repo="owner/repo4", query="compute",
+                confirm_sensitive_search=True, storage_path=tmp
             )
 
             assert "error" not in result
@@ -127,7 +131,8 @@ class TestSearchTextFileSpotlighting:
                 file_content="x = 1\n",
             )
             result = search_text(
-                repo="owner/repo5", query="zzznomatch999", storage_path=tmp
+                repo="owner/repo5", query="zzznomatch999",
+                confirm_sensitive_search=True, storage_path=tmp
             )
 
             assert "error" not in result
@@ -138,6 +143,38 @@ class TestSearchTextFileSpotlighting:
         """A query against an unindexed repo must return an error dict."""
         with tempfile.TemporaryDirectory() as tmp:
             result = search_text(
-                repo="nobody/ghost", query="anything", storage_path=tmp
+                repo="nobody/ghost", query="anything",
+                confirm_sensitive_search=True, storage_path=tmp
             )
             assert "error" in result
+
+    def test_missing_confirmation_returns_error(self):
+        """search_text must require an explicit confirmation flag."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_store_with_file(
+                tmp, "owner", "repo6",
+                file_path="x.py",
+                file_content="needle = 1\n",
+            )
+            result = search_text(repo="owner/repo6", query="needle", storage_path=tmp)
+
+            assert "error" in result
+            assert "confirm_sensitive_search" in result["error"]
+
+    def test_redaction_marker_query_rejected(self):
+        """search_text must reject queries for the internal redaction sentinel."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_store_with_file(
+                tmp, "owner", "repo7",
+                file_path="x.py",
+                file_content='API_KEY = "sk-testkey12345678901234"\n',
+            )
+            result = search_text(
+                repo="owner/repo7",
+                query="<REDACTED>",
+                confirm_sensitive_search=True,
+                storage_path=tmp,
+            )
+
+            assert "error" in result
+            assert "redaction" in result["error"].lower()
