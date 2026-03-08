@@ -5,9 +5,9 @@ from typing import Optional
 from ..core.boundaries import make_meta, wrap_untrusted_content
 from ..core.errors import sanitize_error, RepoNotFoundError
 from ..core.validation import ValidationError
-from ..storage import IndexStore
 from ..parser import Symbol, SymbolNode, build_symbol_tree
-from ._common import parse_repo, timed, elapsed_ms
+from ._common import RepoContext, timed, elapsed_ms
+from .registry import ToolSpec, register
 
 
 def get_file_outline(
@@ -27,17 +27,10 @@ def get_file_outline(
     """
     start = timed()
 
-    # --- security gate: parse + validate repo identifier ---
-    try:
-        owner, name = parse_repo(repo, storage_path)
-    except RepoNotFoundError as exc:
-        return {"error": str(exc)}
-
-    store = IndexStore(base_path=storage_path)
-    index = store.load_index(owner, name)
-
-    if not index:
-        return {"error": f"Repository not indexed: {owner}/{name}"}
+    ctx = RepoContext.resolve(repo, storage_path)
+    if isinstance(ctx, dict):
+        return ctx
+    owner, name, index = ctx.owner, ctx.name, ctx.index
 
     # --- security gate: validate file_path is tracked by the index ---
     if file_path not in index.source_files:
@@ -117,3 +110,33 @@ def _node_to_dict(node: SymbolNode) -> dict:
         result["children"] = [_node_to_dict(c) for c in node.children]
 
     return result
+
+
+_spec = register(ToolSpec(
+    name="get_file_outline",
+    description=(
+        "Get all symbols (functions, classes, methods) in a file "
+        "with signatures and summaries."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "repo": {
+                "type": "string",
+                "description": "Repository identifier (owner/repo or just repo name)",
+            },
+            "file_path": {
+                "type": "string",
+                "description": "Path to the file within the repository (e.g., 'src/main.py')",
+            },
+        },
+        "required": ["repo", "file_path"],
+    },
+    handler=lambda args, storage_path: get_file_outline(
+        repo=args["repo"],
+        file_path=args["file_path"],
+        storage_path=storage_path,
+    ),
+    untrusted=True,
+    required_args=["repo", "file_path"],
+))

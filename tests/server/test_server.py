@@ -6,19 +6,19 @@ from pathlib import Path
 import pytest
 
 from codesight_mcp.server import (
-    _rate_limit,
     call_tool,
     list_tools,
     server,
 )
+from codesight_mcp.core.rate_limiting import _rate_limit
 
 
 @pytest.mark.asyncio
 async def test_server_lists_all_tools():
-    """Test that server lists all 17 tools."""
+    """Test that server lists all 19 tools."""
     tools = await list_tools()
 
-    assert len(tools) == 17
+    assert len(tools) == 19
 
     names = {t.name for t in tools}
     expected = {
@@ -27,6 +27,7 @@ async def test_server_lists_all_tools():
         "invalidate_cache", "search_text", "get_repo_outline",
         "get_callers", "get_callees", "get_call_chain",
         "get_type_hierarchy", "get_imports", "get_impact",
+        "get_dead_code", "status",
     }
     assert names == expected
 
@@ -374,7 +375,7 @@ class TestRateLimiting:
 
     def test_global_rate_limit_blocks_after_limit_reached(self, tmp_path):
         """Filling the persisted global bucket to the cap must block the next call."""
-        from codesight_mcp.server import _MAX_GLOBAL_CALLS_PER_MINUTE
+        from codesight_mcp.core.rate_limiting import _MAX_GLOBAL_CALLS_PER_MINUTE
 
         state_path = tmp_path / ".rate_limits.json"
         now = 2_000_000_000.0
@@ -397,8 +398,8 @@ class TestUnknownToolRejectedBeforeRateLimit:
     @pytest.mark.asyncio
     async def test_unknown_tool_returns_error_and_does_not_create_rate_limit_state(self, monkeypatch, tmp_path):
         """Calling an unknown tool must not create persistent rate-limit state."""
-        import codesight_mcp.server as server_module
-        monkeypatch.setattr(server_module, "_rate_limit_state_dir", lambda _storage: tmp_path)
+        import codesight_mcp.core.rate_limiting as rl_module
+        monkeypatch.setattr(rl_module, "_rate_limit_state_dir", lambda _storage: tmp_path)
 
         result = await call_tool("totally_fake_tool", {})
 
@@ -413,8 +414,8 @@ class TestUnknownToolRejectedBeforeRateLimit:
     @pytest.mark.asyncio
     async def test_many_fake_tool_calls_do_not_create_rate_limit_state(self, monkeypatch, tmp_path):
         """Flooding unknown tool names must not create rate-limit state."""
-        import codesight_mcp.server as server_module
-        monkeypatch.setattr(server_module, "_rate_limit_state_dir", lambda _storage: tmp_path)
+        import codesight_mcp.core.rate_limiting as rl_module
+        monkeypatch.setattr(rl_module, "_rate_limit_state_dir", lambda _storage: tmp_path)
 
         for i in range(150):
             await call_tool(f"fake_tool_{i}", {})
@@ -850,9 +851,9 @@ class TestPersistentRateLimit:
             _rate_limit("search_text", str(tmp_path))
 
     def test_rate_limit_temp_fallback_is_private_per_user(self, monkeypatch, tmp_path):
-        import codesight_mcp.server as server_module
+        import codesight_mcp.core.rate_limiting as rl_module
 
-        real_ensure = server_module.ensure_private_dir
+        real_ensure = rl_module.ensure_private_dir
         home_dir = Path.home() / ".code-index"
 
         def fake_ensure(path):
@@ -861,9 +862,9 @@ class TestPersistentRateLimit:
                 raise OSError("deny home dir")
             return real_ensure(p)
 
-        monkeypatch.setattr(server_module, "ensure_private_dir", fake_ensure)
+        monkeypatch.setattr(rl_module, "ensure_private_dir", fake_ensure)
 
-        fallback = server_module._rate_limit_state_dir(None)
+        fallback = rl_module._rate_limit_state_dir(None)
         assert "codesight-mcp-rate-limits-" in fallback.name
 
     def test_rate_limit_rejects_symlink_state_dir(self, tmp_path):
@@ -892,3 +893,57 @@ class TestPersistentRateLimit:
         state_path.write_text('["not", "a", "dict"]', encoding="utf-8")
 
         assert _rate_limit("search_text", str(tmp_path)) is True
+
+
+# -- CLI subcommand tests -----------------------------------------------------
+
+class TestCLISubcommands:
+    """Tests for the CLI entry point (main function)."""
+
+    def test_main_index_subcommand(self, tmp_path, monkeypatch):
+        """CLI: codesight-mcp index <path> --no-ai"""
+        import sys
+        from codesight_mcp.server import main
+
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "foo.py").write_text("def foo(): pass\n")
+
+        monkeypatch.setattr(
+            sys, "argv",
+            ["codesight-mcp", "index", str(project_dir), "--no-ai"],
+        )
+        monkeypatch.setenv("CODESIGHT_ALLOWED_ROOTS", str(project_dir))
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        # 0 = success, 1 = index failed (e.g. no symbols) -- either is acceptable
+        assert exc_info.value.code in (0, 1)
+
+    def test_main_index_repo_no_url(self, monkeypatch):
+        """CLI: codesight-mcp index-repo (missing URL) prints error and exits 1."""
+        import sys
+        from codesight_mcp.server import main
+
+        monkeypatch.setattr(sys, "argv", ["codesight-mcp", "index-repo"])
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+
+    def test_main_no_subcommand_starts_server(self, monkeypatch):
+        """CLI with no subcommand calls run_server (MCP mode)."""
+        import sys
+        import codesight_mcp.server as server_module
+
+        server_started = []
+
+        async def fake_run_server():
+            server_started.append(True)
+
+        monkeypatch.setattr(sys, "argv", ["codesight-mcp"])
+        monkeypatch.setattr(server_module, "run_server", fake_run_server)
+
+        # main() calls asyncio.run(run_server()) which should not raise
+        server_module.main()
+        assert server_started

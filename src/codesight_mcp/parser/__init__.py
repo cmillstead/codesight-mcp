@@ -2,7 +2,7 @@
 
 from .symbols import Symbol, make_symbol_id, compute_content_hash
 from .languages import LanguageSpec, LANGUAGE_REGISTRY, LANGUAGE_EXTENSIONS, PYTHON_SPEC
-from .extractor import parse_file
+from .extractor import parse_file, SUPPORTED_LANGUAGES
 from .hierarchy import SymbolNode, build_symbol_tree, flatten_tree
 from .graph import CodeGraph
 
@@ -15,6 +15,7 @@ __all__ = [
     "LANGUAGE_EXTENSIONS",
     "PYTHON_SPEC",
     "parse_file",
+    "SUPPORTED_LANGUAGES",
     "SymbolNode",
     "build_symbol_tree",
     "flatten_tree",

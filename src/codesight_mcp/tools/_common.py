@@ -5,10 +5,11 @@ doesn't duplicate the logic.
 """
 
 import time
+from dataclasses import dataclass
 from typing import Optional, Union
 
 from ..security import sanitize_repo_identifier
-from ..storage import IndexStore
+from ..storage import CodeIndex, IndexStore
 from ..core.errors import sanitize_error, RepoNotFoundError
 from ..parser.graph import CodeGraph
 
@@ -50,6 +51,31 @@ def parse_repo(
         raise RepoNotFoundError(sanitize_error(exc)) from exc
 
     return owner, name
+
+
+@dataclass
+class RepoContext:
+    """Resolved repository context -- shared by all tool handlers."""
+
+    owner: str
+    name: str
+    store: IndexStore
+    index: CodeIndex
+
+    @classmethod
+    def resolve(
+        cls, repo: str, storage_path: Optional[str] = None
+    ) -> Union["RepoContext", dict]:
+        """Parse repo, load index, return context or error dict."""
+        try:
+            owner, name = parse_repo(repo, storage_path)
+        except RepoNotFoundError as exc:
+            return {"error": str(exc)}
+        store = IndexStore(base_path=storage_path)
+        index = store.load_index(owner, name)
+        if not index:
+            return {"error": f"Repository not indexed: {owner}/{name}"}
+        return cls(owner=owner, name=name, store=store, index=index)
 
 
 def timed() -> float:
@@ -139,17 +165,11 @@ def prepare_graph_query(
         On failure a plain ``dict`` with an ``"error"`` key that the
         caller should return directly.
     """
-    # --- security gate: parse + validate repo identifier ---
-    try:
-        owner, name = parse_repo(repo, storage_path)
-    except RepoNotFoundError as exc:
-        return {"error": str(exc)}
+    ctx = RepoContext.resolve(repo, storage_path)
+    if isinstance(ctx, dict):
+        return ctx
 
-    store = IndexStore(base_path=storage_path)
-    index = store.load_index(owner, name)
-
-    if not index:
-        return {"error": f"Repository not indexed: {owner}/{name}"}
+    owner, name, index = ctx.owner, ctx.name, ctx.index
 
     # Verify target symbol exists (when requested)
     symbol_info = None

@@ -6,9 +6,9 @@ from typing import Optional
 
 from ..core.boundaries import make_meta, wrap_untrusted_content
 from ..core.errors import sanitize_error, RepoNotFoundError
-from ..storage import IndexStore
 from ..parser import LANGUAGE_EXTENSIONS
-from ._common import parse_repo, timed, elapsed_ms
+from ._common import RepoContext, timed, elapsed_ms
+from .registry import ToolSpec, register
 
 
 def get_file_tree(
@@ -28,12 +28,6 @@ def get_file_tree(
     """
     start = timed()
 
-    # --- security gate: parse + validate repo identifier ---
-    try:
-        owner, name = parse_repo(repo, storage_path)
-    except RepoNotFoundError as exc:
-        return {"error": str(exc)}
-
     # --- security gate: validate path_prefix ---
     if "\x00" in path_prefix:
         return {"error": "path_prefix contains null bytes"}
@@ -42,11 +36,10 @@ def get_file_tree(
     if any(part == ".." for part in prefix_parts):
         return {"error": "path_prefix must not contain '..' components"}
 
-    store = IndexStore(base_path=storage_path)
-    index = store.load_index(owner, name)
-
-    if not index:
-        return {"error": f"Repository not indexed: {owner}/{name}"}
+    ctx = RepoContext.resolve(repo, storage_path)
+    if isinstance(ctx, dict):
+        return ctx
+    owner, name, index = ctx.owner, ctx.name, ctx.index
 
     # Filter files by prefix
     files = [f for f in index.source_files if f.startswith(path_prefix)]
@@ -127,3 +120,30 @@ def _dict_to_list(node_dict: dict) -> list[dict]:
             })
 
     return result
+
+
+_spec = register(ToolSpec(
+    name="get_file_tree",
+    description="Get the file tree of an indexed repository, optionally filtered by path prefix.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "repo": {
+                "type": "string",
+                "description": "Repository identifier (owner/repo or just repo name)",
+            },
+            "path_prefix": {
+                "type": "string",
+                "description": "Optional path prefix to filter (e.g., 'src/utils')",
+                "default": "",
+            },
+        },
+        "required": ["repo"],
+    },
+    handler=lambda args, storage_path: get_file_tree(
+        repo=args["repo"],
+        path_prefix=args.get("path_prefix", ""),
+        storage_path=storage_path,
+    ),
+    required_args=["repo"],
+))

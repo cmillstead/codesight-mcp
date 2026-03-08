@@ -13,13 +13,39 @@ from ..core.limits import MAX_CONTEXT_LINES
 from ..core.boundaries import wrap_untrusted_content, make_meta
 from ..core.errors import sanitize_error, RepoNotFoundError
 from ..core.validation import ValidationError
-from ..storage import IndexStore
-from ._common import parse_repo, timed, elapsed_ms
+from ._common import RepoContext, timed, elapsed_ms
+from .registry import ToolSpec, register
+
+
+def _find_symbol_at_line(index, file_path: str, line: int) -> Optional[dict]:
+    """Find the innermost symbol whose line range contains *line*.
+
+    When multiple symbols overlap (e.g. a method inside a class), the
+    narrowest (innermost) one is returned — determined by the smallest
+    ``end_line - line`` span.
+    """
+    candidates = []
+    for sym in index.symbols:
+        if sym.get("file") != file_path:
+            continue
+        sym_line = sym.get("line", 0)
+        sym_end = sym.get("end_line", 0)
+        if sym_line <= line <= sym_end:
+            candidates.append(sym)
+
+    if not candidates:
+        return None
+
+    # Pick the narrowest (innermost) symbol
+    candidates.sort(key=lambda s: s.get("end_line", 0) - s.get("line", 0))
+    return candidates[0]
 
 
 def get_symbol(
     repo: str,
-    symbol_id: str,
+    symbol_id: str = "",
+    file_path: Optional[str] = None,
+    line: Optional[int] = None,
     verify: bool = False,
     context_lines: int = 0,
     storage_path: Optional[str] = None,
@@ -29,31 +55,38 @@ def get_symbol(
     Args:
         repo: Repository identifier (owner/repo or just repo name).
         symbol_id: Symbol ID from get_file_outline or search_symbols.
+        file_path: Path to file within the repository (alternative to symbol_id).
+        line: Line number within the file (used with file_path).
         verify: If True, re-read source and verify content hash matches.
         context_lines: Number of lines before/after the symbol to include.
         storage_path: Custom storage path.
 
     Returns:
         Dict with symbol details, source code (wrapped), and _meta envelope.
+
+    When both ``file_path`` and ``line`` are provided and ``symbol_id`` is
+    empty, the tool finds the innermost symbol whose line range contains
+    the requested line.
     """
     start = timed()
 
-    # --- security gate: parse + validate repo identifier ---
-    try:
-        owner, name = parse_repo(repo, storage_path)
-    except RepoNotFoundError as exc:
-        return {"error": str(exc)}
+    ctx = RepoContext.resolve(repo, storage_path)
+    if isinstance(ctx, dict):
+        return ctx
+    owner, name, store, index = ctx.owner, ctx.name, ctx.store, ctx.index
 
-    store = IndexStore(base_path=storage_path)
-    index = store.load_index(owner, name)
-
-    if not index:
-        return {"error": f"Repository not indexed: {owner}/{name}"}
-
-    symbol = index.get_symbol(symbol_id)
-
-    if not symbol:
-        return {"error": f"Symbol not found: {symbol_id}"}
+    # Resolve symbol_id from file:line when symbol_id is absent
+    if not symbol_id and file_path is not None and line is not None:
+        symbol = _find_symbol_at_line(index, file_path, line)
+        if not symbol:
+            return {"error": f"No symbol found at {file_path}:{line}"}
+        symbol_id = symbol["id"]
+    elif symbol_id:
+        symbol = index.get_symbol(symbol_id)
+        if not symbol:
+            return {"error": f"Symbol not found: {symbol_id}"}
+    else:
+        return {"error": "Either symbol_id or both file_path and line are required"}
 
     # Get source via byte-offset read
     try:
@@ -138,17 +171,10 @@ def get_symbols(
     """
     start = timed()
 
-    # --- security gate: parse + validate repo identifier ---
-    try:
-        owner, name = parse_repo(repo, storage_path)
-    except RepoNotFoundError as exc:
-        return {"error": str(exc)}
-
-    store = IndexStore(base_path=storage_path)
-    index = store.load_index(owner, name)
-
-    if not index:
-        return {"error": f"Repository not indexed: {owner}/{name}"}
+    ctx = RepoContext.resolve(repo, storage_path)
+    if isinstance(ctx, dict):
+        return ctx
+    owner, name, store, index = ctx.owner, ctx.name, ctx.store, ctx.index
 
     symbols = []
     errors = []
@@ -192,3 +218,87 @@ def get_symbols(
             "symbol_count": len(symbols),
         },
     }
+
+
+_spec_get_symbol = register(ToolSpec(
+    name="get_symbol",
+    description=(
+        "Get the full source code of a specific symbol. Use after "
+        "identifying relevant symbols via get_file_outline or "
+        "search_symbols. Alternatively, pass file_path and line "
+        "to look up the symbol at a specific location."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "repo": {
+                "type": "string",
+                "description": "Repository identifier (owner/repo or just repo name)",
+            },
+            "symbol_id": {
+                "type": "string",
+                "description": "Symbol ID from get_file_outline or search_symbols",
+            },
+            "file_path": {
+                "type": "string",
+                "description": "Path to file within the repository (alternative to symbol_id)",
+            },
+            "line": {
+                "type": "integer",
+                "description": "Line number within the file (used with file_path)",
+            },
+            "verify": {
+                "type": "boolean",
+                "description": "Verify content hash matches stored hash (detects source drift)",
+                "default": False,
+            },
+            "context_lines": {
+                "type": "integer",
+                "description": "Number of lines before/after symbol to include for context",
+                "default": 0,
+            },
+        },
+        "required": ["repo"],
+    },
+    handler=lambda args, storage_path: get_symbol(
+        repo=args["repo"],
+        symbol_id=args.get("symbol_id", ""),
+        file_path=args.get("file_path"),
+        line=args.get("line"),
+        verify=args.get("verify", False),
+        context_lines=args.get("context_lines", 0),
+        storage_path=storage_path,
+    ),
+    untrusted=True,
+    required_args=["repo"],
+))
+
+_spec_get_symbols = register(ToolSpec(
+    name="get_symbols",
+    description=(
+        "Get full source code of multiple symbols in one call. "
+        "Efficient for loading related symbols."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "repo": {
+                "type": "string",
+                "description": "Repository identifier (owner/repo or just repo name)",
+            },
+            "symbol_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of symbol IDs to retrieve",
+            },
+        },
+        "required": ["repo", "symbol_ids"],
+    },
+    handler=lambda args, storage_path: get_symbols(
+        repo=args["repo"],
+        symbol_ids=args["symbol_ids"],
+        storage_path=storage_path,
+    ),
+    untrusted=True,
+    required_args=["repo", "symbol_ids"],
+))

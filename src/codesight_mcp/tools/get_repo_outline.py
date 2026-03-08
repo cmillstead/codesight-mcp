@@ -6,8 +6,8 @@ from typing import Optional
 
 from ..core.boundaries import make_meta, wrap_untrusted_content
 from ..core.errors import sanitize_error, RepoNotFoundError
-from ..storage import IndexStore
-from ._common import parse_repo, timed, elapsed_ms
+from ._common import RepoContext, timed, elapsed_ms
+from .registry import ToolSpec, register
 
 
 def get_repo_outline(
@@ -28,17 +28,10 @@ def get_repo_outline(
     """
     start = timed()
 
-    # --- security gate: parse + validate repo identifier ---
-    try:
-        owner, name = parse_repo(repo, storage_path)
-    except RepoNotFoundError as exc:
-        return {"error": str(exc)}
-
-    store = IndexStore(base_path=storage_path)
-    index = store.load_index(owner, name)
-
-    if not index:
-        return {"error": f"Repository not indexed: {owner}/{name}"}
+    ctx = RepoContext.resolve(repo, storage_path)
+    if isinstance(ctx, dict):
+        return ctx
+    owner, name, index = ctx.owner, ctx.name, ctx.index
 
     # Compute directory-level stats
     dir_file_counts: Counter = Counter()
@@ -69,3 +62,28 @@ def get_repo_outline(
             "timing_ms": ms,
         },
     }
+
+
+_spec = register(ToolSpec(
+    name="get_repo_outline",
+    description=(
+        "Get a high-level overview of an indexed repository: "
+        "directories, file counts, language breakdown, symbol counts. "
+        "Lighter than get_file_tree."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "repo": {
+                "type": "string",
+                "description": "Repository identifier (owner/repo or just repo name)",
+            },
+        },
+        "required": ["repo"],
+    },
+    handler=lambda args, storage_path: get_repo_outline(
+        repo=args["repo"],
+        storage_path=storage_path,
+    ),
+    required_args=["repo"],
+))

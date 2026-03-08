@@ -174,6 +174,15 @@ _INLINE_SECRET_RE = re.compile(
 )
 
 
+def _no_redact() -> bool:
+    """Check if redaction is disabled via CODESIGHT_NO_REDACT=1.
+
+    Checked at runtime on every call (not cached) so the env var
+    can be toggled mid-process if needed.
+    """
+    return os.environ.get("CODESIGHT_NO_REDACT", "") == "1"
+
+
 def sanitize_signature_for_api(signature: str) -> str:
     """Redact inline secrets from a code signature before sending to external APIs.
 
@@ -181,7 +190,12 @@ def sanitize_signature_for_api(signature: str) -> str:
     inline secret regex. These characters could be injected to break the
     continuous-ASCII assumption that _INLINE_SECRET_RE patterns rely on (e.g.
     "sk_live_\\x7f123" would not match without this strip step).
+
+    When CODESIGHT_NO_REDACT=1 is set, returns the signature unchanged
+    (opt-in for trusted local usage).
     """
+    if _no_redact():
+        return signature
     # Strip DEL and C1 controls that could break continuous-ASCII regex matching
     cleaned = "".join(
         c for c in signature if not (ord(c) == 127 or 128 <= ord(c) <= 159)
