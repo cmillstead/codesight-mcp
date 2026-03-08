@@ -137,3 +137,21 @@ class TestGetFileOutlineFileValidation:
             )
             assert "error" not in result
             assert result.get("symbols") is not None
+
+
+def test_search_symbols_accepts_all_supported_languages():
+    """All 15 supported languages must be accepted as filter values."""
+    ALL_LANGUAGES = [
+        "python", "javascript", "typescript", "go", "rust", "java", "php",
+        "c", "cpp", "c_sharp", "ruby", "swift", "kotlin", "dart", "perl",
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        _make_store_with_symbol(tmp)
+        for lang in ALL_LANGUAGES:
+            result = search_symbols(
+                repo="owner/myrepo",
+                query="foo",
+                language=lang,
+                storage_path=tmp,
+            )
+            assert "Invalid language" not in result.get("error", ""), f"Language {lang!r} rejected"

@@ -12,10 +12,11 @@ from tree_sitter import Language, Parser
 # Individual language bindings cache
 _LANGUAGE_BINDINGS = {}
 
-_ALLOWED_LANGUAGES = {
+SUPPORTED_LANGUAGES = frozenset({
     "python", "javascript", "typescript", "go", "rust", "java", "php",
     "c", "cpp", "c_sharp", "ruby", "swift", "kotlin", "dart", "perl",
-}
+})
+_ALLOWED_LANGUAGES = SUPPORTED_LANGUAGES  # backward compat
 
 # Some tree-sitter packages use language_<name>() instead of language()
 _LANGUAGE_FUNC_MAP = {

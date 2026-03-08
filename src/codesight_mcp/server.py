@@ -27,6 +27,7 @@ from .tools.list_repos import list_repos
 from .tools.get_file_tree import get_file_tree
 from .tools.get_file_outline import get_file_outline
 from .tools.get_symbol import get_symbol, get_symbols
+from .parser.extractor import SUPPORTED_LANGUAGES
 from .tools.search_symbols import search_symbols
 from .tools.invalidate_cache import invalidate_cache
 from .tools.search_text import search_text
@@ -287,7 +288,7 @@ async def list_tools() -> list[Tool]:
                     "language": {
                         "type": "string",
                         "description": "Optional filter by language",
-                        "enum": ["python", "javascript", "typescript", "go", "rust", "java", "php", "c", "cpp", "c_sharp", "ruby", "swift", "kotlin"]
+                        "enum": sorted(SUPPORTED_LANGUAGES)
                     },
                     "max_results": {
                         "type": "integer",

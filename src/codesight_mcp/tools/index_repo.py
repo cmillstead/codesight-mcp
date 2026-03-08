@@ -158,11 +158,11 @@ async def index_repo(
             "files": parsed_files[:20],  # Limit files in response
         }
 
+        if len(source_files) >= MAX_FILE_COUNT:
+            warnings.append(f"Repository has many files; indexed first {MAX_FILE_COUNT}")
+
         if warnings:
             result["warnings"] = warnings
-
-        if len(source_files) >= MAX_FILE_COUNT:
-            result["warnings"] = warnings + [f"Repository has many files; indexed first {MAX_FILE_COUNT}"]
 
         return result
 

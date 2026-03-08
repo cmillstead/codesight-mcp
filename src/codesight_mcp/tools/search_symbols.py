@@ -5,6 +5,7 @@ from typing import Optional
 from ..core.limits import MAX_SEARCH_RESULTS
 from ..core.boundaries import make_meta, wrap_untrusted_content
 from ..core.errors import sanitize_error, RepoNotFoundError
+from ..parser.extractor import SUPPORTED_LANGUAGES
 from ..security import sanitize_signature_for_api
 from ..storage import IndexStore
 from ._common import parse_repo, timed, elapsed_ms, calculate_symbol_score
@@ -35,7 +36,7 @@ def search_symbols(
     """
     # --- security gate: validate kind and language allowlists ---
     _VALID_KINDS = {"function", "class", "method", "constant", "type"}
-    _VALID_LANGUAGES = {"python", "javascript", "typescript", "go", "rust", "java"}
+    _VALID_LANGUAGES = SUPPORTED_LANGUAGES
 
     if kind is not None and kind not in _VALID_KINDS:
         return {
