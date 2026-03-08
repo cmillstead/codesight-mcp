@@ -47,9 +47,9 @@ from .core.limits import (
 # do not change the storage path used by _validate_storage_path().
 _CODE_INDEX_PATH: str = os.environ.get("CODE_INDEX_PATH", "")
 
-# ADV-LOW-6: Resolve IRONMUNCH_ALLOWED_ROOTS to absolute paths at startup so
+# ADV-LOW-6: Resolve CODESIGHT_ALLOWED_ROOTS to absolute paths at startup so
 # callers always receive fully-resolved paths regardless of cwd changes.
-_raw_roots = os.environ.get("IRONMUNCH_ALLOWED_ROOTS", "").split(":")
+_raw_roots = os.environ.get("CODESIGHT_ALLOWED_ROOTS", "").split(":")
 ALLOWED_ROOTS: list[str] = [str(Path(r).resolve()) for r in _raw_roots if r]
 
 # Integer parameter bounds used by _sanitize_arguments.
@@ -868,7 +868,7 @@ def main():
         codesight-mcp index [path] [--no-ai]       # index a local folder
         codesight-mcp index-repo <url> [--no-ai]   # index a GitHub repo
 
-    If ``IRONMUNCH_ALLOWED_ROOTS`` is not set, ``index`` defaults the allowed
+    If ``CODESIGHT_ALLOWED_ROOTS`` is not set, ``index`` defaults the allowed
     root to the target path itself so the CLI is usable outside an MCP session.
     """
     import sys

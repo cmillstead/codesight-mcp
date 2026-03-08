@@ -775,13 +775,13 @@ class TestGetSymbolsMixed:
             )
 
 
-# -- ADV-LOW-6: IRONMUNCH_ALLOWED_ROOTS resolved to absolute paths at startup --
+# -- ADV-LOW-6: CODESIGHT_ALLOWED_ROOTS resolved to absolute paths at startup --
 
 class TestAllowedRootsAbsolutePaths:
-    """ADV-LOW-6: IRONMUNCH_ALLOWED_ROOTS must be resolved to absolute paths."""
+    """ADV-LOW-6: CODESIGHT_ALLOWED_ROOTS must be resolved to absolute paths."""
 
     def test_relative_env_path_resolves_to_absolute(self):
-        """A relative path in IRONMUNCH_ALLOWED_ROOTS must resolve to an absolute path."""
+        """A relative path in CODESIGHT_ALLOWED_ROOTS must resolve to an absolute path."""
         from pathlib import Path as _Path
         relative = "some/relative/path"
         resolved = str(_Path(relative).resolve())

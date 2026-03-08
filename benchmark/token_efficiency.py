@@ -78,9 +78,9 @@ try:
     from codesight_mcp.tools.search_symbols import search_symbols as im_search
     from codesight_mcp.tools.get_symbol import get_symbols as im_get_symbols
 
-    IRONMUNCH_AVAILABLE = True
+    CODESIGHT_AVAILABLE = True
 except ImportError:
-    IRONMUNCH_AVAILABLE = False
+    CODESIGHT_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # jCodeMunch imports (optional)
@@ -122,7 +122,7 @@ def _supports_param(fn, param: str) -> bool:
 
 def run_codesight_mcp(target: Path, queries: list[str], top_k: int) -> list[int]:
     """Index target with codesight-mcp, run queries, return token counts per query."""
-    if not IRONMUNCH_AVAILABLE:
+    if not CODESIGHT_AVAILABLE:
         raise RuntimeError("codesight-mcp not importable")
 
     with tempfile.TemporaryDirectory(prefix="im_bench_") as tmp:
@@ -356,7 +356,7 @@ def main() -> None:
     run_im = args.tool in ("codesight-mcp", "both")
     run_jcm = args.tool in ("jcodemunch", "both")
 
-    if run_im and not IRONMUNCH_AVAILABLE:
+    if run_im and not CODESIGHT_AVAILABLE:
         print("Error: codesight-mcp is not installed/importable.", file=sys.stderr)
         sys.exit(1)
 

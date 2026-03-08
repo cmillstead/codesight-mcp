@@ -124,7 +124,7 @@ All tools are rate-limited at 60 calls per minute per tool and 300 calls per min
 - Index writes use 3-phase atomic write: content files first, then JSON `.tmp`, then rename
 - `O_NOFOLLOW` on all file reads and writes to prevent symlink races
 - `load_index()` validates schema: required fields, type checks, element-level type checks on symbol arrays
-- `IRONMUNCH_ALLOWED_ROOTS`: colon-separated allowlist; colons within paths are rejected
+- `CODESIGHT_ALLOWED_ROOTS`: colon-separated allowlist; colons within paths are rejected
 - Per-repository advisory lock files serialize `save_index()`, `incremental_save()`, and `delete_index()`
 - Auxiliary state directories reject symlinks and are forced to `0o700`
 - Persistent rate-limit lock/state files use no-follow opens and atomic writes

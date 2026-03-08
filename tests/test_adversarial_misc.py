@@ -93,18 +93,18 @@ class TestIndexFolderDefaultDeny:
     """SEC-HIGH-1: index_folder must default-deny without allowlist."""
 
     def test_no_allowlist_returns_error(self):
-        """index_folder must fail when IRONMUNCH_ALLOWED_ROOTS is unset."""
+        """index_folder must fail when CODESIGHT_ALLOWED_ROOTS is unset."""
         import tempfile, os
         from unittest.mock import patch
         from codesight_mcp.tools.index_folder import index_folder
 
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(os.environ, {}, clear=True):
-                # Ensure IRONMUNCH_ALLOWED_ROOTS is not set
-                os.environ.pop("IRONMUNCH_ALLOWED_ROOTS", None)
+                # Ensure CODESIGHT_ALLOWED_ROOTS is not set
+                os.environ.pop("CODESIGHT_ALLOWED_ROOTS", None)
                 result = index_folder(path=tmp, use_ai_summaries=False)
                 assert result["success"] is False
-                assert "IRONMUNCH_ALLOWED_ROOTS" in result["error"]
+                assert "CODESIGHT_ALLOWED_ROOTS" in result["error"]
 
     def test_with_allowlist_works(self):
         """index_folder should work when allowed_roots is provided."""
@@ -124,7 +124,7 @@ class TestIndexFolderDefaultDeny:
 
 
 class TestAllowedRootsLeadingColon:
-    """SEC-LOW-1: IRONMUNCH_ALLOWED_ROOTS with leading colon must not allow CWD."""
+    """SEC-LOW-1: CODESIGHT_ALLOWED_ROOTS with leading colon must not allow CWD."""
 
     def test_leading_colon_rejected(self):
         """An empty string in allowed_roots must not silently permit any path."""

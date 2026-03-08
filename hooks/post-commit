@@ -4,26 +4,26 @@
 # Install: cp hooks/post-commit .git/hooks/post-commit && chmod +x .git/hooks/post-commit
 #
 # Git hooks don't inherit your shell environment. Create ~/.config/codesight-mcp/env with:
-#   IRONMUNCH_BIN=/path/to/.venv/bin/codesight-mcp
+#   CODESIGHT_BIN=/path/to/.venv/bin/codesight-mcp
 
 # Load codesight-mcp env file if present
-IRONMUNCH_ENV="$HOME/.config/codesight-mcp/env"
-if [ -f "$IRONMUNCH_ENV" ]; then
+CODESIGHT_ENV="$HOME/.config/codesight-mcp/env"
+if [ -f "$CODESIGHT_ENV" ]; then
     # shellcheck disable=SC1090
-    . "$IRONMUNCH_ENV"
+    . "$CODESIGHT_ENV"
 fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
-# Use IRONMUNCH_BIN from env file, fall back to PATH
-IRONMUNCH="${IRONMUNCH_BIN:-$(command -v codesight-mcp)}"
+# Use CODESIGHT_BIN from env file, fall back to PATH
+CODESIGHT="${CODESIGHT_BIN:-$(command -v codesight-mcp)}"
 
-if [ -z "$IRONMUNCH" ] || [ ! -x "$IRONMUNCH" ]; then
+if [ -z "$CODESIGHT" ] || [ ! -x "$CODESIGHT" ]; then
     exit 0
 fi
 
 (
-    RESULT=$("$IRONMUNCH" index "$REPO_ROOT" --no-ai 2>&1)
+    RESULT=$("$CODESIGHT" index "$REPO_ROOT" --no-ai 2>&1)
     if echo "$RESULT" | grep -q '"success": true'; then
         FILES=$(echo "$RESULT" | grep '"file_count"' | grep -o '[0-9]*')
         SYMBOLS=$(echo "$RESULT" | grep '"symbol_count"' | grep -o '[0-9]*')

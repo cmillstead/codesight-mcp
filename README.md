@@ -89,7 +89,7 @@ Add codesight-mcp to your MCP client configuration. For **Claude Desktop**:
     "codesight-mcp": {
       "command": "codesight-mcp",
       "env": {
-        "IRONMUNCH_ALLOWED_ROOTS": "/Users/you/src",
+        "CODESIGHT_ALLOWED_ROOTS": "/Users/you/src",
         "GITHUB_TOKEN": "ghp_...",
         "ANTHROPIC_API_KEY": "sk-ant-..."
       }
@@ -106,7 +106,7 @@ For **Claude Code**, add to `~/.claude/settings.json`:
     "codesight-mcp": {
       "command": "/path/to/.venv/bin/codesight-mcp",
       "env": {
-        "IRONMUNCH_ALLOWED_ROOTS": "/Users/you/src",
+        "CODESIGHT_ALLOWED_ROOTS": "/Users/you/src",
         "GITHUB_TOKEN": "ghp_..."
       }
     }
@@ -116,7 +116,7 @@ For **Claude Code**, add to `~/.claude/settings.json`:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `IRONMUNCH_ALLOWED_ROOTS` | Yes (local) | Colon-separated directories `index_folder` may access. Denied by default if unset. |
+| `CODESIGHT_ALLOWED_ROOTS` | Yes (local) | Colon-separated directories `index_folder` may access. Denied by default if unset. |
 | `GITHUB_TOKEN` | Yes (GitHub) | Required for private repos; recommended to avoid rate limits on public repos. |
 | `ANTHROPIC_API_KEY` | No | Enables AI-generated symbol summaries. Falls back to docstrings if unset. |
 
@@ -293,7 +293,7 @@ Both hooks run in the background so they never block your workflow. Remove `--no
 mkdir -p ~/.config/codesight-mcp
 cat > ~/.config/codesight-mcp/env <<'EOF'
 export GITHUB_TOKEN=ghp_...
-export IRONMUNCH_BIN=/path/to/.venv/bin/codesight-mcp
+export CODESIGHT_BIN=/path/to/.venv/bin/codesight-mcp
 EOF
 chmod 600 ~/.config/codesight-mcp/env
 ```
@@ -317,7 +317,7 @@ codesight-mcp treats the connected AI as an untrusted principal. Every tool argu
 | **Path validation** | 6-step chain: null bytes, traversal, length limits, resolution, containment, symlink checks |
 | **Content boundaries** | Microsoft-style spotlighting markers to resist indirect prompt injection |
 | **Error sanitization** | No raw exceptions or system paths in tool responses |
-| **Allowed roots** | `IRONMUNCH_ALLOWED_ROOTS` restricts which directories can be indexed |
+| **Allowed roots** | `CODESIGHT_ALLOWED_ROOTS` restricts which directories can be indexed |
 | **Secret redaction** | Secrets in function bodies are redacted from API output (stored at rest in `~/.code-index/`) |
 
 See [SECURITY.md](SECURITY.md) for the full threat model, defense matrix, and validation chain details.
@@ -328,7 +328,7 @@ See [SECURITY.md](SECURITY.md) for the full threat model, defense matrix, and va
 
 | Variable | Description |
 |----------|-------------|
-| `IRONMUNCH_ALLOWED_ROOTS` | Colon-separated list of directories `index_folder` is allowed to index. **Required** for local folder indexing — denied by default if unset. Example: `/Users/you/src:/home/you/projects` |
+| `CODESIGHT_ALLOWED_ROOTS` | Colon-separated list of directories `index_folder` is allowed to index. **Required** for local folder indexing — denied by default if unset. Example: `/Users/you/src:/home/you/projects` |
 | `GITHUB_TOKEN` | GitHub personal access token. Required for private repos; strongly recommended to avoid rate limits on public repos. |
 | `ANTHROPIC_API_KEY` | Anthropic API key for AI-generated symbol summaries. Optional — falls back to docstrings if unset. |
 | `CODE_INDEX_PATH` | Custom storage directory for indexes. Default: `~/.code-index/` |

@@ -39,7 +39,7 @@ def index_folder(
         follow_symlinks: Whether to follow symlinks (default False for safety).
         allowed_roots: Pre-split list of allowed root directories. When None
             (not provided), indexing is denied by default. The caller
-            (server.py) is responsible for reading IRONMUNCH_ALLOWED_ROOTS
+            (server.py) is responsible for reading CODESIGHT_ALLOWED_ROOTS
             from the environment and splitting it before passing it here.
 
     Returns:
@@ -52,13 +52,13 @@ def index_folder(
     if not allowed_roots:
         return {
             "success": False,
-            "error": "IRONMUNCH_ALLOWED_ROOTS not configured. "
+            "error": "CODESIGHT_ALLOWED_ROOTS not configured. "
                      "Set it to a colon-separated list of allowed directories.",
         }
     # SEC-LOW-1: filter empty entries to prevent Path("").resolve() == CWD
     parts = [r.strip() for r in allowed_roots if r.strip()]
     if not parts:
-        return {"success": False, "error": "IRONMUNCH_ALLOWED_ROOTS is empty after parsing"}
+        return {"success": False, "error": "CODESIGHT_ALLOWED_ROOTS is empty after parsing"}
     allowed = [Path(p).expanduser().resolve() for p in parts]
     if not any(is_within(a, folder_path) or folder_path == a for a in allowed):
         return {"success": False, "error": "Folder is outside allowed roots"}

@@ -5,19 +5,19 @@
 #
 # Git hooks don't inherit your shell environment. Create ~/.config/codesight-mcp/env with:
 #   GITHUB_TOKEN=ghp_...
-#   IRONMUNCH_BIN=/path/to/.venv/bin/codesight-mcp
+#   CODESIGHT_BIN=/path/to/.venv/bin/codesight-mcp
 
-# Load codesight-mcp env file if present (provides GITHUB_TOKEN, IRONMUNCH_BIN etc.)
-IRONMUNCH_ENV="$HOME/.config/codesight-mcp/env"
-if [ -f "$IRONMUNCH_ENV" ]; then
+# Load codesight-mcp env file if present (provides GITHUB_TOKEN, CODESIGHT_BIN etc.)
+CODESIGHT_ENV="$HOME/.config/codesight-mcp/env"
+if [ -f "$CODESIGHT_ENV" ]; then
     # shellcheck disable=SC1090
-    . "$IRONMUNCH_ENV"
+    . "$CODESIGHT_ENV"
 fi
 
-# Use IRONMUNCH_BIN from env file, fall back to PATH
-IRONMUNCH="${IRONMUNCH_BIN:-$(command -v codesight-mcp)}"
+# Use CODESIGHT_BIN from env file, fall back to PATH
+CODESIGHT="${CODESIGHT_BIN:-$(command -v codesight-mcp)}"
 
-if [ -z "$IRONMUNCH" ] || [ ! -x "$IRONMUNCH" ]; then
+if [ -z "$CODESIGHT" ] || [ ! -x "$CODESIGHT" ]; then
     exit 0
 fi
 
@@ -40,7 +40,7 @@ if [ -z "$REPO" ]; then
 fi
 
 (
-    RESULT=$(GITHUB_TOKEN="$GITHUB_TOKEN" "$IRONMUNCH" index-repo "$REPO" --no-ai 2>&1)
+    RESULT=$(GITHUB_TOKEN="$GITHUB_TOKEN" "$CODESIGHT" index-repo "$REPO" --no-ai 2>&1)
     if echo "$RESULT" | grep -q '"success": true'; then
         FILES=$(echo "$RESULT" | grep '"file_count"' | grep -o '[0-9]*')
         SYMBOLS=$(echo "$RESULT" | grep '"symbol_count"' | grep -o '[0-9]*')

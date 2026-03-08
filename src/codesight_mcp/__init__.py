@@ -1,1 +1,1 @@
-"""Ironmunch: Security-hardened code indexing MCP server."""
+"""codesight-mcp: Security-hardened code indexing MCP server."""
