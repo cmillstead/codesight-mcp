@@ -6,11 +6,11 @@ from pathlib import Path
 import pytest
 
 from codesight_mcp.server import (
-    _rate_limit,
     call_tool,
     list_tools,
     server,
 )
+from codesight_mcp.core.rate_limiting import _rate_limit
 
 
 @pytest.mark.asyncio
@@ -374,7 +374,7 @@ class TestRateLimiting:
 
     def test_global_rate_limit_blocks_after_limit_reached(self, tmp_path):
         """Filling the persisted global bucket to the cap must block the next call."""
-        from codesight_mcp.server import _MAX_GLOBAL_CALLS_PER_MINUTE
+        from codesight_mcp.core.rate_limiting import _MAX_GLOBAL_CALLS_PER_MINUTE
 
         state_path = tmp_path / ".rate_limits.json"
         now = 2_000_000_000.0
@@ -397,8 +397,8 @@ class TestUnknownToolRejectedBeforeRateLimit:
     @pytest.mark.asyncio
     async def test_unknown_tool_returns_error_and_does_not_create_rate_limit_state(self, monkeypatch, tmp_path):
         """Calling an unknown tool must not create persistent rate-limit state."""
-        import codesight_mcp.server as server_module
-        monkeypatch.setattr(server_module, "_rate_limit_state_dir", lambda _storage: tmp_path)
+        import codesight_mcp.core.rate_limiting as rl_module
+        monkeypatch.setattr(rl_module, "_rate_limit_state_dir", lambda _storage: tmp_path)
 
         result = await call_tool("totally_fake_tool", {})
 
@@ -413,8 +413,8 @@ class TestUnknownToolRejectedBeforeRateLimit:
     @pytest.mark.asyncio
     async def test_many_fake_tool_calls_do_not_create_rate_limit_state(self, monkeypatch, tmp_path):
         """Flooding unknown tool names must not create rate-limit state."""
-        import codesight_mcp.server as server_module
-        monkeypatch.setattr(server_module, "_rate_limit_state_dir", lambda _storage: tmp_path)
+        import codesight_mcp.core.rate_limiting as rl_module
+        monkeypatch.setattr(rl_module, "_rate_limit_state_dir", lambda _storage: tmp_path)
 
         for i in range(150):
             await call_tool(f"fake_tool_{i}", {})
@@ -850,9 +850,9 @@ class TestPersistentRateLimit:
             _rate_limit("search_text", str(tmp_path))
 
     def test_rate_limit_temp_fallback_is_private_per_user(self, monkeypatch, tmp_path):
-        import codesight_mcp.server as server_module
+        import codesight_mcp.core.rate_limiting as rl_module
 
-        real_ensure = server_module.ensure_private_dir
+        real_ensure = rl_module.ensure_private_dir
         home_dir = Path.home() / ".code-index"
 
         def fake_ensure(path):
@@ -861,9 +861,9 @@ class TestPersistentRateLimit:
                 raise OSError("deny home dir")
             return real_ensure(p)
 
-        monkeypatch.setattr(server_module, "ensure_private_dir", fake_ensure)
+        monkeypatch.setattr(rl_module, "ensure_private_dir", fake_ensure)
 
-        fallback = server_module._rate_limit_state_dir(None)
+        fallback = rl_module._rate_limit_state_dir(None)
         assert "codesight-mcp-rate-limits-" in fallback.name
 
     def test_rate_limit_rejects_symlink_state_dir(self, tmp_path):

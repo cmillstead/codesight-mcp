@@ -9,6 +9,8 @@
 from typing import Optional
 from tree_sitter import Language, Parser
 
+from .languages import _strip_quotes
+
 # Individual language bindings cache
 _LANGUAGE_BINDINGS = {}
 
@@ -367,20 +369,6 @@ def _extract_python_docstring(node, source_bytes: bytes) -> str:
             return _strip_quotes(doc)
 
     return ""
-
-
-def _strip_quotes(text: str) -> str:
-    """Strip quotes from a docstring."""
-    text = text.strip()
-    if text.startswith('"""') and text.endswith('"""'):
-        return text[3:-3].strip()
-    if text.startswith("'''") and text.endswith("'''"):
-        return text[3:-3].strip()
-    if text.startswith('"') and text.endswith('"'):
-        return text[1:-1].strip()
-    if text.startswith("'") and text.endswith("'"):
-        return text[1:-1].strip()
-    return text
 
 
 def _extract_preceding_comments(node, source_bytes: bytes) -> str:

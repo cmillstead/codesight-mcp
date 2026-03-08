@@ -21,6 +21,8 @@ from ..core.validation import validate_path, ValidationError, is_within
 # Bump this when the index schema changes in an incompatible way.
 INDEX_VERSION = 2
 
+_HASH_RE = re.compile(r"[0-9a-f]{64}")
+
 
 def _open_nofollow_text(path: "Path") -> "io.TextIOWrapper":
     """Open a file for reading with O_NOFOLLOW to prevent symlink attacks.
@@ -350,7 +352,6 @@ class IndexStore:
         # ADV-LOW-6: Validate content_hash format — must be a 64-char lowercase hex
         # string (SHA-256). Discard malformed hashes to prevent verify=True from
         # reporting a spurious mismatch against an arbitrary attacker-controlled string.
-        _HASH_RE = re.compile(r"[0-9a-f]{64}")
         for sym in data["symbols"]:
             for field in ("signature", "docstring", "summary"):
                 if field in sym and isinstance(sym[field], str):
