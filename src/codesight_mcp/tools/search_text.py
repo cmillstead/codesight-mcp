@@ -13,8 +13,7 @@ from ..core.limits import MAX_SEARCH_RESULTS
 from ..core.boundaries import wrap_untrusted_content, make_meta
 from ..core.errors import RepoNotFoundError
 from ..core.validation import ValidationError
-from ..storage import IndexStore
-from ._common import parse_repo, timed, elapsed_ms
+from ._common import RepoContext, timed, elapsed_ms
 from .registry import ToolSpec, register
 
 _REDACTION_SENTINEL = "<REDACTED>"
@@ -58,17 +57,10 @@ def search_text(
             "error": "Query targets internal redaction markers and is not allowed"
         }
 
-    # --- security gate: parse + validate repo identifier ---
-    try:
-        owner, name = parse_repo(repo, storage_path)
-    except RepoNotFoundError as exc:
-        return {"error": str(exc)}
-
-    store = IndexStore(base_path=storage_path)
-    index = store.load_index(owner, name)
-
-    if not index:
-        return {"error": f"Repository not indexed: {owner}/{name}"}
+    ctx = RepoContext.resolve(repo, storage_path)
+    if isinstance(ctx, dict):
+        return ctx
+    owner, name, store, index = ctx.owner, ctx.name, ctx.store, ctx.index
 
     # Clamp max_results
     max_results = min(max(max_results, 1), MAX_SEARCH_RESULTS)

@@ -7,8 +7,7 @@ from ..core.boundaries import make_meta, wrap_untrusted_content
 from ..core.errors import sanitize_error, RepoNotFoundError
 from ..parser.extractor import SUPPORTED_LANGUAGES
 from ..security import sanitize_signature_for_api
-from ..storage import IndexStore
-from ._common import parse_repo, timed, elapsed_ms, calculate_symbol_score
+from ._common import RepoContext, timed, elapsed_ms, calculate_symbol_score
 from .registry import ToolSpec, register
 
 
@@ -55,17 +54,10 @@ def search_symbols(
 
     start = timed()
 
-    # --- security gate: parse + validate repo identifier ---
-    try:
-        owner, name = parse_repo(repo, storage_path)
-    except RepoNotFoundError as exc:
-        return {"error": str(exc)}
-
-    store = IndexStore(base_path=storage_path)
-    index = store.load_index(owner, name)
-
-    if not index:
-        return {"error": f"Repository not indexed: {owner}/{name}"}
+    ctx = RepoContext.resolve(repo, storage_path)
+    if isinstance(ctx, dict):
+        return ctx
+    owner, name, index = ctx.owner, ctx.name, ctx.index
 
     # Clamp max_results
     max_results = min(max(max_results, 1), MAX_SEARCH_RESULTS)

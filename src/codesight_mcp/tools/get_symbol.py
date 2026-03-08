@@ -13,8 +13,7 @@ from ..core.limits import MAX_CONTEXT_LINES
 from ..core.boundaries import wrap_untrusted_content, make_meta
 from ..core.errors import sanitize_error, RepoNotFoundError
 from ..core.validation import ValidationError
-from ..storage import IndexStore
-from ._common import parse_repo, timed, elapsed_ms
+from ._common import RepoContext, timed, elapsed_ms
 from .registry import ToolSpec, register
 
 
@@ -39,17 +38,10 @@ def get_symbol(
     """
     start = timed()
 
-    # --- security gate: parse + validate repo identifier ---
-    try:
-        owner, name = parse_repo(repo, storage_path)
-    except RepoNotFoundError as exc:
-        return {"error": str(exc)}
-
-    store = IndexStore(base_path=storage_path)
-    index = store.load_index(owner, name)
-
-    if not index:
-        return {"error": f"Repository not indexed: {owner}/{name}"}
+    ctx = RepoContext.resolve(repo, storage_path)
+    if isinstance(ctx, dict):
+        return ctx
+    owner, name, store, index = ctx.owner, ctx.name, ctx.store, ctx.index
 
     symbol = index.get_symbol(symbol_id)
 
@@ -139,17 +131,10 @@ def get_symbols(
     """
     start = timed()
 
-    # --- security gate: parse + validate repo identifier ---
-    try:
-        owner, name = parse_repo(repo, storage_path)
-    except RepoNotFoundError as exc:
-        return {"error": str(exc)}
-
-    store = IndexStore(base_path=storage_path)
-    index = store.load_index(owner, name)
-
-    if not index:
-        return {"error": f"Repository not indexed: {owner}/{name}"}
+    ctx = RepoContext.resolve(repo, storage_path)
+    if isinstance(ctx, dict):
+        return ctx
+    owner, name, store, index = ctx.owner, ctx.name, ctx.store, ctx.index
 
     symbols = []
     errors = []
