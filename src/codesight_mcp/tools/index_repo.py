@@ -18,14 +18,11 @@ from ..discovery import (
     fetch_gitignore,
     discover_source_files,
 )
-from ..parser import parse_file, LANGUAGE_EXTENSIONS
 from ..security import sanitize_repo_identifier
 from ..core.errors import sanitize_error
 from ..core.limits import MAX_FILE_COUNT, GITHUB_API_TIMEOUT
-from ..parser.graph import CodeGraph
-from ..storage import IndexStore
-from ..summarizer import summarize_symbols
 from .registry import ToolSpec, register
+from ._indexing_common import parse_source_files, finalize_index
 
 
 async def index_repo(
@@ -98,33 +95,10 @@ async def index_repo(
         tasks = [fetch_with_limit(path) for path in source_files]
         file_contents = await asyncio.gather(*tasks)
 
-        # Parse each file
-        all_symbols = []
-        languages: dict[str, int] = {}
-        raw_files: dict[str, str] = {}
-        parsed_files: list[str] = []
-        parse_fail_count = 0
-
-        for path, content in file_contents:
-            if not content:
-                continue
-
-            _, ext = os.path.splitext(path)
-            language = LANGUAGE_EXTENSIONS.get(ext)
-
-            if not language:
-                continue
-
-            try:
-                symbols = parse_file(content, path, language)
-                if symbols:
-                    all_symbols.extend(symbols)
-                    languages[language] = languages.get(language, 0) + 1
-                    raw_files[path] = content
-                    parsed_files.append(path)
-            except Exception:
-                parse_fail_count += 1
-                continue
+        # Parse files using shared pipeline
+        all_symbols, languages, raw_files, parsed_files, parse_fail_count = (
+            parse_source_files(file_contents)
+        )
 
         if parse_fail_count > 0:
             warnings.append(f"{parse_fail_count} file(s) failed to parse")
@@ -132,38 +106,20 @@ async def index_repo(
         if not all_symbols:
             return {"success": False, "error": "No symbols extracted"}
 
-        # Generate summaries (run in thread to avoid blocking the event loop)
-        all_symbols = await asyncio.to_thread(summarize_symbols, all_symbols, use_ai=use_ai_summaries)
-
-        # Save index
-        store = IndexStore(base_path=storage_path)
-        store.save_index(
+        # Run summarization in thread to avoid blocking the event loop
+        result = await asyncio.to_thread(
+            finalize_index,
             owner=owner,
             name=repo,
-            source_files=parsed_files,
-            symbols=all_symbols,
-            raw_files=raw_files,
+            all_symbols=all_symbols,
             languages=languages,
+            raw_files=raw_files,
+            parsed_files=parsed_files,
+            warnings=warnings,
+            use_ai_summaries=use_ai_summaries,
+            storage_path=storage_path,
+            source_file_count=len(source_files),
         )
-
-        # Clear the in-memory graph cache so stale graphs aren't reused
-        CodeGraph.clear_cache()
-
-        result: dict = {
-            "success": True,
-            "repo": f"{owner}/{repo}",
-            "indexed_at": store.load_index(owner, repo).indexed_at,
-            "file_count": len(parsed_files),
-            "symbol_count": len(all_symbols),
-            "languages": languages,
-            "files": parsed_files[:20],  # Limit files in response
-        }
-
-        if len(source_files) >= MAX_FILE_COUNT:
-            warnings.append(f"Repository has many files; indexed first {MAX_FILE_COUNT}")
-
-        if warnings:
-            result["warnings"] = warnings
 
         return result
 

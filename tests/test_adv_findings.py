@@ -158,7 +158,7 @@ class TestIndexFolderParsedWarningsNoPath:
         # Write a file that triggers a parse exception via monkeypatching
         (tmp_path / "bad.py").write_text("def broken():\n    pass\n")
 
-        with patch("codesight_mcp.tools.index_folder.parse_file") as mock_parse:
+        with patch("codesight_mcp.tools._indexing_common.parse_file") as mock_parse:
             def side_effect(content, path, language):
                 if "bad.py" in path:
                     raise RuntimeError("simulated parse error")
@@ -228,9 +228,9 @@ class TestIndexRepoParsedWarningsNoPath:
             patch("codesight_mcp.tools.index_repo.fetch_repo_tree", new=fake_fetch_tree),
             patch("codesight_mcp.tools.index_repo.fetch_file_content", new=fake_fetch_file),
             patch("codesight_mcp.tools.index_repo.fetch_gitignore", new=fake_fetch_gitignore),
-            patch("codesight_mcp.tools.index_repo.parse_file") as mock_parse,
-            patch("codesight_mcp.tools.index_repo.summarize_symbols", side_effect=lambda syms, use_ai: syms),
-            patch("codesight_mcp.tools.index_repo.IndexStore") as mock_store_cls,
+            patch("codesight_mcp.tools._indexing_common.parse_file") as mock_parse,
+            patch("codesight_mcp.tools._indexing_common.summarize_symbols", side_effect=lambda syms, use_ai: syms),
+            patch("codesight_mcp.tools._indexing_common.IndexStore") as mock_store_cls,
         ):
             # Make parse raise for bad.py, succeed for good.py
             from codesight_mcp.parser.symbols import Symbol

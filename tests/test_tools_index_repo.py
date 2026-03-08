@@ -88,9 +88,9 @@ async def test_index_repo_warnings_not_overwritten(tmp_path, monkeypatch):
          patch("codesight_mcp.tools.index_repo.fetch_gitignore", new_callable=AsyncMock) as mock_gi, \
          patch("codesight_mcp.tools.index_repo.discover_source_files") as mock_disc, \
          patch("codesight_mcp.tools.index_repo.fetch_file_content", new_callable=AsyncMock) as mock_fetch, \
-         patch("codesight_mcp.tools.index_repo.parse_file") as mock_parse, \
-         patch("codesight_mcp.tools.index_repo.summarize_symbols") as mock_sum, \
-         patch("codesight_mcp.tools.index_repo.IndexStore") as mock_store_cls:
+         patch("codesight_mcp.tools._indexing_common.parse_file") as mock_parse, \
+         patch("codesight_mcp.tools._indexing_common.summarize_symbols") as mock_sum, \
+         patch("codesight_mcp.tools._indexing_common.IndexStore") as mock_store_cls:
 
         mock_tree.return_value = tree_entries
         mock_gi.return_value = ""

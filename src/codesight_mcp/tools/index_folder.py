@@ -12,15 +12,13 @@ from pathlib import Path
 from typing import Optional
 
 from ..discovery import discover_local_files
-from ..parser import parse_file, LANGUAGE_EXTENSIONS
+from ..parser import LANGUAGE_EXTENSIONS
 from ..security import sanitize_repo_identifier
 from ..core.errors import sanitize_error
 from ..core.limits import MAX_FILE_COUNT
 from ..core.validation import validate_path, ValidationError, is_within
-from ..parser.graph import CodeGraph
-from ..storage import IndexStore
-from ..summarizer import summarize_symbols
 from .registry import ToolSpec, register
+from ._indexing_common import parse_source_files, finalize_index
 
 
 def index_folder(
@@ -85,71 +83,57 @@ def index_folder(
         if not source_files:
             return {"success": False, "error": "No source files found"}
 
-        # Read and parse files
-        all_symbols = []
-        languages: dict[str, int] = {}
-        raw_files: dict[str, str] = {}
-        parsed_files: list[str] = []
-        parse_fail_count = 0
-
-        for file_path in source_files:
-            # --- security gate: re-validate path before reading (defense in depth) ---
-            try:
-                resolved = file_path.resolve()
-                resolved_root = folder_path.resolve()
-                if not is_within(resolved_root, resolved):
+        # Build (rel_path, content) iterator with security gates
+        def _read_files():
+            for file_path in source_files:
+                # --- security gate: re-validate path before reading (defense in depth) ---
+                try:
+                    resolved = file_path.resolve()
+                    resolved_root = folder_path.resolve()
+                    if not is_within(resolved_root, resolved):
+                        continue
+                except (OSError, ValueError):
                     continue
-            except (OSError, ValueError):
-                continue
 
-            try:
-                fd = os.open(str(file_path), os.O_RDONLY | os.O_NOFOLLOW)
-                with os.fdopen(fd, encoding="utf-8", errors="replace") as fh:
-                    content = fh.read()
-            except OSError as e:
-                if e.errno == errno.ELOOP:
-                    warnings.append("Skipped 1 symlink file")
-                else:
+                try:
+                    fd = os.open(str(file_path), os.O_RDONLY | os.O_NOFOLLOW)
+                    with os.fdopen(fd, encoding="utf-8", errors="replace") as fh:
+                        content = fh.read()
+                except OSError as e:
+                    if e.errno == errno.ELOOP:
+                        warnings.append("Skipped 1 symlink file")
+                    else:
+                        warnings.append("Failed to read file")
+                    continue
+                except Exception:
                     warnings.append("Failed to read file")
-                continue
-            except Exception:
-                warnings.append("Failed to read file")
-                continue
+                    continue
 
-            # Get relative path for storage
-            try:
-                rel_path = file_path.relative_to(folder_path).as_posix()
-            except ValueError:
-                warnings.append("Skipped file: could not resolve relative path")
-                continue
+                # Get relative path for storage
+                try:
+                    rel_path = file_path.relative_to(folder_path).as_posix()
+                except ValueError:
+                    warnings.append("Skipped file: could not resolve relative path")
+                    continue
 
-            # Determine language from extension
-            ext = file_path.suffix
-            language = LANGUAGE_EXTENSIONS.get(ext)
+                # Only yield files with a known language extension
+                ext = file_path.suffix
+                language = LANGUAGE_EXTENSIONS.get(ext)
+                if not language:
+                    continue
 
-            if not language:
-                continue
+                yield rel_path, content
 
-            # Parse file
-            try:
-                symbols = parse_file(content, rel_path, language)
-                if symbols:
-                    all_symbols.extend(symbols)
-                    languages[language] = languages.get(language, 0) + 1
-                    raw_files[rel_path] = content
-                    parsed_files.append(rel_path)
-            except Exception:
-                parse_fail_count += 1
-                continue
+        # Parse files using shared pipeline
+        all_symbols, languages, raw_files, parsed_files, parse_fail_count = (
+            parse_source_files(_read_files())
+        )
 
         if parse_fail_count > 0:
             warnings.append(f"{parse_fail_count} file(s) failed to parse")
 
         if not all_symbols:
             return {"success": False, "error": "No symbols extracted from files"}
-
-        # Generate summaries
-        all_symbols = summarize_symbols(all_symbols, use_ai=use_ai_summaries)
 
         # Create repo identifier from folder path.
         # ADV-HIGH-2: use a short SHA-256 hash of the full resolved path so that
@@ -167,37 +151,18 @@ def index_folder(
         except Exception as exc:
             return {"success": False, "error": sanitize_error(exc)}
 
-        # Save index
-        store = IndexStore(base_path=storage_path)
-        store.save_index(
+        return finalize_index(
             owner=owner,
             name=repo_name,
-            source_files=parsed_files,
-            symbols=all_symbols,
-            raw_files=raw_files,
+            all_symbols=all_symbols,
             languages=languages,
+            raw_files=raw_files,
+            parsed_files=parsed_files,
+            warnings=warnings,
+            use_ai_summaries=use_ai_summaries,
+            storage_path=storage_path,
+            source_file_count=len(source_files),
         )
-
-        # Clear the in-memory graph cache so stale graphs aren't reused
-        CodeGraph.clear_cache()
-
-        result: dict = {
-            "success": True,
-            "repo": f"{owner}/{repo_name}",
-            "indexed_at": store.load_index(owner, repo_name).indexed_at,
-            "file_count": len(parsed_files),
-            "symbol_count": len(all_symbols),
-            "languages": languages,
-            "files": parsed_files[:20],  # Limit files in response
-        }
-
-        if warnings:
-            result["warnings"] = warnings
-
-        if len(source_files) >= MAX_FILE_COUNT:
-            result["note"] = f"Folder has many files; indexed first {MAX_FILE_COUNT}"
-
-        return result
 
     except Exception as e:
         return {"success": False, "error": sanitize_error(e)}
