@@ -1,7 +1,9 @@
 """Persistent file-backed sliding-window rate limiting."""
 
+import errno
 import json
 import os
+import secrets
 import tempfile
 import time
 from pathlib import Path
@@ -28,7 +30,13 @@ def _rate_limit_state_dir(storage_path: str | None) -> Path:
     except OSError:
         uid = getattr(os, "getuid", lambda: None)()
         suffix = str(uid) if uid is not None else os.environ.get("USER", "unknown")
-        return ensure_private_dir(Path(tempfile.gettempdir()) / f"codesight-mcp-rate-limits-{suffix}")
+        # ADV-INFO-1: Catch PermissionError from pre-created dir (Linux /tmp),
+        # retry with random suffix to avoid predictable name DoS.
+        try:
+            return ensure_private_dir(Path(tempfile.gettempdir()) / f"codesight-mcp-rate-limits-{suffix}")
+        except PermissionError:
+            rand = secrets.token_hex(8)
+            return ensure_private_dir(Path(tempfile.gettempdir()) / f"codesight-mcp-rate-limits-{suffix}-{rand}")
 
 
 def _rate_limit(tool_name: str, storage_path: str | None) -> bool:
@@ -39,13 +47,27 @@ def _rate_limit(tool_name: str, storage_path: str | None) -> bool:
     now = time.time()
 
     with exclusive_file_lock(lock_path):
+        # ADV-LOW-3: Use O_NOFOLLOW to prevent symlink-based DoS
+        # (e.g., symlink to /dev/zero would block forever on read_text).
         try:
-            if state_path.stat().st_size > MAX_INDEX_SIZE:
-                data = {}
+            fd = os.open(str(state_path), os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                data = {}  # symlink — reject silently
+            elif exc.errno == errno.ENOENT:
+                data = {}  # file doesn't exist yet
             else:
-                data = json.loads(state_path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
-            data = {}
+                data = {}
+        else:
+            try:
+                with os.fdopen(fd, "r", encoding="utf-8") as fh:
+                    raw = fh.read(MAX_INDEX_SIZE + 1)
+                    if len(raw) > MAX_INDEX_SIZE:
+                        data = {}
+                    else:
+                        data = json.loads(raw)
+            except (json.JSONDecodeError, OSError, ValueError):
+                data = {}
         if not isinstance(data, dict):
             data = {}
 

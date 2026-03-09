@@ -31,11 +31,13 @@ The threat model assumes:
 | Binary confusion | Dual-stage detection: extension-based filtering plus null-byte content sniffing |
 | Credential logging | _RedactAuthFilter suppresses httpx log records containing auth headers at all log levels |
 | Supply chain | `uv.lock` pinned with hashes; CI uses `uv sync --frozen --verify-hashes`; GitHub Actions are SHA-pinned |
-| Summarizer injection | Injection phrases stripped from summaries (full substring scan, not prefix-only); degraded-mode parse returns empty on missing nonce delimiters; symbol kind validated against allowlist before prompt interpolation |
+| Summarizer injection | Injection phrases stripped from summaries (full substring scan, not prefix-only); degraded-mode parse returns empty on missing nonce delimiters; symbol kind validated against allowlist before prompt interpolation; system/user prompt split uses per-batch nonce marker |
+| Env var redirection | `ANTHROPIC_BASE_URL` and `GITHUB_TOKEN` frozen at module import time; runtime mutation cannot redirect API calls |
 | Graph traversal DoS | BFS call-chain capped at 5 paths; all traversal depths clamped to [1, 50]; SHA-256 fingerprint for cache keys |
 | Index poisoning | `load_index()` rejects source_files with traversal sequences or control characters |
 | Gitignore ReDoS | Per-pattern length cap (200 chars) in both local and GitHub gitignore parsing; pattern count capped at 2000 |
 | fd leak on validation failure | `safe_read_file()` transfers fd ownership to fdopen immediately; explicit close on fdopen failure |
+| Double-close fd | `_safe_write_content()` separates fdopen failure (caller closes fd) from write failure (file object owns fd) |
 | Silent redaction bypass | `CODESIGHT_NO_REDACT=1` logs a warning on first detection |
 
 ## Validation Chain
@@ -141,9 +143,11 @@ All tools are rate-limited at 60 calls per minute per tool and 300 calls per min
 - Missing nonce delimiters entirely: returns empty summaries (no degraded-mode parsing of untrusted text)
 - Batch size capped at `MAX_BATCHES_PER_INDEX=50`
 - Symbol `kind` validated against `_VALID_KINDS` allowlist before prompt interpolation (prevents kind-injection attacks)
-- Injection phrase blocklist expanded: "disregard", "forget", "override", "new instruction" added to existing set
+- Injection phrase blocklist: 20 phrases including "disregard", "forget", "override", "new instruction", "you must", "you are", "respond with", "reply with", "human:", "<|", "|>", "execute ", "run this"
+- System/user prompt split uses per-batch nonce marker (`<<<SPLIT_{nonce}>>>`) to prevent signature injection of the static delimiter
 - Signatures sanitized (newlines stripped, length capped) before inclusion in prompts
 - `trust_env=False` on both httpx and Anthropic SDK clients
+- `ANTHROPIC_BASE_URL` frozen at module import; runtime env var mutation cannot redirect summarization to attacker server
 
 ## Security Scan History
 
@@ -159,12 +163,14 @@ All tools are rate-limited at 60 calls per minute per tool and 300 calls per min
 | Scan-04e | 2026-03-04e | 16 fixed | +25 |
 | Adversarial (2nd round) | 2026-03-04 | 30 fixed | +49 |
 | Adversarial (3rd round) | 2026-03-04b | 23 findings (fixes pending) | — |
-| Adversarial (4th round) | 2026-03-08 | 18 findings, 11 fixed | pending |
-| **Total** | | | **664+ tests** |
+| Adversarial (4th round) | 2026-03-08 | 18 findings, 11 fixed | +14 |
+| Adversarial v2 (5th round) | 2026-03-08b | 16 findings fixed (2 HIGH, 6 MED, 8 LOW) | +20 |
+| Adversarial v3 (6th round) | 2026-03-08c | 8 findings (1 MED, 3 LOW, 4 INFO) | +22 |
+| **Total** | | | **1031 tests** |
 
 ## Testing
 
-The test suite contains **664 tests** across adversarial, security, integration, and unit categories covering:
+The test suite contains **1031 tests** across adversarial, security, integration, and unit categories covering:
 
 - Control character and DEL byte injection in paths, repo IDs, and queries
 - `../` traversal in direct arguments and via poisoned index entries

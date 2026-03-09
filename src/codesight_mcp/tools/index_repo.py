@@ -24,6 +24,10 @@ from ..core.limits import MAX_FILE_COUNT, GITHUB_API_TIMEOUT
 from .registry import ToolSpec, register
 from ._indexing_common import parse_source_files, finalize_index
 
+# ADV-INFO-2: Freeze GITHUB_TOKEN at import time for consistency with other
+# frozen env vars (_NO_REDACT, _CODE_INDEX_PATH, _ANTHROPIC_BASE_URL).
+_GITHUB_TOKEN: str = os.environ.get("GITHUB_TOKEN", "")
+
 
 async def index_repo(
     url: str,
@@ -55,9 +59,9 @@ async def index_repo(
     except Exception as exc:
         return {"success": False, "error": sanitize_error(exc)}
 
-    # Get GitHub token from env if not provided
+    # Get GitHub token from frozen env if not provided
     if not github_token:
-        github_token = os.environ.get("GITHUB_TOKEN")
+        github_token = _GITHUB_TOKEN or None
 
     warnings: list[str] = []
 

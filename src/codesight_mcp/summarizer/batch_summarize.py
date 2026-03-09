@@ -16,6 +16,10 @@ from ..security import sanitize_signature_for_api
 
 logger = logging.getLogger(__name__)
 
+# ADV-MED-1: Freeze ANTHROPIC_BASE_URL at import time so a compromised
+# in-process dependency cannot redirect AI requests after startup.
+_ANTHROPIC_BASE_URL: str | None = os.environ.get("ANTHROPIC_BASE_URL") or None
+
 # Maximum number of batches allowed per summarize_batch() invocation.
 # Prevents runaway token usage for adversarially large symbol lists.
 MAX_BATCHES_PER_INDEX = 50
@@ -36,6 +40,16 @@ _INJECTION_PHRASES = (
     "forget ",
     "override ",
     "new instruction",
+    # ADV-LOW-2 v3: expanded blocklist (defense-in-depth).
+    "you must",
+    "you are",
+    "respond with",
+    "reply with",
+    "human:",
+    "<|",
+    "|>",
+    "execute ",
+    "run this",
 )
 
 # ADV-MED-2: Valid symbol kinds — only these are interpolated into prompts.
@@ -142,6 +156,7 @@ class BatchSummarizer:
             if api_key:
                 self.client = Anthropic(
                     api_key=api_key,
+                    base_url=_ANTHROPIC_BASE_URL,
                     http_client=_httpx.Client(trust_env=False),
                 )
         except ImportError:
@@ -255,8 +270,9 @@ class BatchSummarizer:
 
         user_lines.extend(["", "Summaries:"])
 
-        # Join with separator for _split_prompt
-        return "\n".join(system_lines) + "\n<<<SPLIT>>>\n" + "\n".join(user_lines)
+        # Join with nonce-based separator for _split_prompt (ADV-INFO-4)
+        split_marker = f"<<<SPLIT_{nonce}>>>"
+        return "\n".join(system_lines) + f"\n{split_marker}\n" + "\n".join(user_lines)
 
     @staticmethod
     def _split_prompt(prompt: str) -> tuple[str, str]:
@@ -264,11 +280,18 @@ class BatchSummarizer:
 
         ADV-MED-4: The system parameter receives higher model privilege,
         keeping trusted instructions separate from untrusted signature data.
+        ADV-INFO-4: Uses nonce-based <<<SPLIT_{nonce}>>> marker via regex.
         """
+        m = re.search(r"<<<SPLIT_[0-9a-zA-Z]+>>>", prompt)
+        if m:
+            system_part = prompt[:m.start()].strip()
+            user_part = prompt[m.end():].strip()
+            return system_part, user_part
+        # Fallback: static marker (backward compat)
         if "<<<SPLIT>>>" in prompt:
             system_part, user_part = prompt.split("<<<SPLIT>>>", 1)
             return system_part.strip(), user_part.strip()
-        # Fallback: entire prompt as user message (backward compat)
+        # Fallback: entire prompt as user message
         return "", prompt
 
     def _parse_response(self, text: str, expected_count: int, nonce: str) -> list[str]:

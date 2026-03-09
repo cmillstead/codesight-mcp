@@ -304,7 +304,7 @@ class TestSystemUserSeparation:
         assert user == "user data"
 
     def test_build_prompt_contains_split_marker(self):
-        """_build_prompt includes <<<SPLIT>>> to enable separation."""
+        """_build_prompt includes nonce-based <<<SPLIT_{nonce}>>> marker."""
         from codesight_mcp.parser.symbols import Symbol
         sym = Symbol(
             id="s1", file="a.py", name="foo", qualified_name="foo",
@@ -315,7 +315,7 @@ class TestSystemUserSeparation:
         )
         summarizer = BatchSummarizer.__new__(BatchSummarizer)
         prompt = summarizer._build_prompt([sym], nonce="testnonce")
-        assert "<<<SPLIT>>>" in prompt
+        assert "<<<SPLIT_testnonce>>>" in prompt
 
         system, user = BatchSummarizer._split_prompt(prompt)
         # System should contain instructions, not signatures

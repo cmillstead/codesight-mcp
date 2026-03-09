@@ -392,6 +392,10 @@ class IndexStore:
                 return None
         if not isinstance(data["indexed_at"], str):
             return None
+        # ADV-INFO-3: Validate owner/name are strings to prevent TypeError
+        # in sanitize_repo_identifier() downstream.
+        if not isinstance(data.get("owner"), str) or not isinstance(data.get("name"), str):
+            return None
         if not isinstance(data["source_files"], list):
             return None
         if not isinstance(data["symbols"], list):
@@ -803,15 +807,15 @@ class IndexStore:
             )
         except OSError:
             return False  # Symlink or permission error — reject
+        # ADV-LOW-1: Separate fdopen failure (we still own fd) from write
+        # failure (file object owns fd) to prevent double-close.
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(content)
+            fh = os.fdopen(fd, "w", encoding="utf-8")
         except Exception:
-            try:
-                os.close(fd)
-            except OSError:
-                pass
-            raise
+            os.close(fd)  # fdopen failed — we still own the fd
+            return False
+        with fh:
+            fh.write(content)
         return True
 
     def _symbol_to_dict(self, symbol: Symbol) -> dict:
