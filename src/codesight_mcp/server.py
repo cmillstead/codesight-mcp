@@ -33,6 +33,7 @@ from .tools import (  # noqa: F401
     get_callers, get_callees, get_call_chain,
     get_type_hierarchy, get_imports, get_impact,
     get_dead_code, status,
+    get_hotspots, get_key_symbols, get_diagram,
 )
 
 # ADV-LOW-7: Read CODE_INDEX_PATH once at startup so subsequent env mutations
@@ -67,6 +68,7 @@ _INT_PARAM_BOUNDS: dict[str, tuple[int, int]] = {
     "context_lines": (0, MAX_CONTEXT_LINES),
     "max_results": (1, MAX_SEARCH_RESULTS),
     "max_depth": (1, 10),
+    "limit": (1, 100),
 }
 
 

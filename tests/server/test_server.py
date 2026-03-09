@@ -15,10 +15,10 @@ from codesight_mcp.core.rate_limiting import _rate_limit
 
 @pytest.mark.asyncio
 async def test_server_lists_all_tools():
-    """Test that server lists all 19 tools."""
+    """Test that server lists all 22 tools."""
     tools = await list_tools()
 
-    assert len(tools) == 19
+    assert len(tools) == 22
 
     names = {t.name for t in tools}
     expected = {
@@ -28,6 +28,7 @@ async def test_server_lists_all_tools():
         "get_callers", "get_callees", "get_call_chain",
         "get_type_hierarchy", "get_imports", "get_impact",
         "get_dead_code", "status",
+        "get_hotspots", "get_key_symbols", "get_diagram",
     }
     assert names == expected
 
@@ -722,6 +723,94 @@ class TestParseRepoBareNameLookup:
             )
         with pytest.raises(RepoNotFoundError, match="[Aa]mbiguous"):
             parse_repo("myproject", storage_path=str(tmp_path))
+
+    def test_bare_name_prefix_match_local_hash(self, tmp_path):
+        """parse_repo resolves bare name against hash-suffixed local repos."""
+        from codesight_mcp.tools._common import parse_repo
+        from codesight_mcp.storage import IndexStore
+        from codesight_mcp.parser import Symbol
+
+        store = IndexStore(base_path=str(tmp_path))
+        store.save_index(
+            owner="local",
+            name="codesight-mcp-b1d9a2d53f7f",
+            source_files=["a.py"],
+            symbols=[Symbol(id="a-py::f", file="a.py", name="f",
+                            qualified_name="f", kind="function", language="python",
+                            signature="def f():", byte_offset=0, byte_length=10)],
+            raw_files={"a.py": "def f(): pass"},
+            languages={"python": 1},
+        )
+        owner, name = parse_repo("codesight-mcp", storage_path=str(tmp_path))
+        assert owner == "local"
+        assert name == "codesight-mcp-b1d9a2d53f7f"
+
+    def test_bare_name_prefix_match_ambiguous(self, tmp_path):
+        """parse_repo raises when multiple hash-suffixed repos match the same base name."""
+        from codesight_mcp.tools._common import parse_repo
+        from codesight_mcp.core.errors import RepoNotFoundError
+        from codesight_mcp.storage import IndexStore
+        from codesight_mcp.parser import Symbol
+
+        store = IndexStore(base_path=str(tmp_path))
+        for hash_suffix in ("aabbccddeeff", "112233445566"):
+            store.save_index(
+                owner="local",
+                name=f"myapp-{hash_suffix}",
+                source_files=["a.py"],
+                symbols=[Symbol(id="a-py::f", file="a.py", name="f",
+                                qualified_name="f", kind="function", language="python",
+                                signature="def f():", byte_offset=0, byte_length=10)],
+                raw_files={"a.py": "def f(): pass"},
+                languages={"python": 1},
+            )
+        with pytest.raises(RepoNotFoundError, match="[Aa]mbiguous"):
+            parse_repo("myapp", storage_path=str(tmp_path))
+
+    def test_bare_name_exact_match_preferred_over_prefix(self, tmp_path):
+        """Exact name match takes priority over prefix match with hash suffix."""
+        from codesight_mcp.tools._common import parse_repo
+        from codesight_mcp.storage import IndexStore
+        from codesight_mcp.parser import Symbol
+
+        store = IndexStore(base_path=str(tmp_path))
+        sym = Symbol(id="a-py::f", file="a.py", name="f",
+                     qualified_name="f", kind="function", language="python",
+                     signature="def f():", byte_offset=0, byte_length=10)
+        # Hash-suffixed version
+        store.save_index(
+            owner="local", name="myapp-aabbccddeeff",
+            source_files=["a.py"], symbols=[sym],
+            raw_files={"a.py": "def f(): pass"}, languages={"python": 1},
+        )
+        # Exact name version
+        store.save_index(
+            owner="acme", name="myapp",
+            source_files=["a.py"], symbols=[sym],
+            raw_files={"a.py": "def f(): pass"}, languages={"python": 1},
+        )
+        owner, name = parse_repo("myapp", storage_path=str(tmp_path))
+        assert owner == "acme"
+        assert name == "myapp"
+
+    def test_bare_name_no_false_prefix_match(self, tmp_path):
+        """12-char hex suffix is required — don't match arbitrary suffixes."""
+        from codesight_mcp.tools._common import parse_repo
+        from codesight_mcp.core.errors import RepoNotFoundError
+        from codesight_mcp.storage import IndexStore
+        from codesight_mcp.parser import Symbol
+
+        store = IndexStore(base_path=str(tmp_path))
+        store.save_index(
+            owner="local", name="myapp-notahexhash",
+            source_files=["a.py"],
+            symbols=[Symbol(id="a-py::f", file="a.py", name="f",
+                            qualified_name="f", kind="function", language="python",
+                            signature="def f():", byte_offset=0, byte_length=10)],
+            raw_files={"a.py": "def f(): pass"}, languages={"python": 1},
+        )
+        with pytest.raises(RepoNotFoundError, match="not found"):
+            parse_repo("myapp", storage_path=str(tmp_path))
 
 
 # -- TEST-LOW-3: get_symbols mixed found/not-found ----------------------------
