@@ -842,6 +842,7 @@ class IndexStore:
             "imports": symbol.imports,
             "inherits_from": symbol.inherits_from,
             "implements": symbol.implements,
+            "complexity": symbol.complexity,
         }
 
     def _index_to_dict(self, index: CodeIndex) -> dict:
