@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/tests-817-brightgreen?style=flat-square" alt="Tests">
 </p>
 
-An **MCP server** that indexes local and GitHub codebases via tree-sitter AST parsing, then exposes 17 tools for symbol retrieval, code graph traversal, and impact analysis — all with byte-offset precision to cut token costs by ~99% compared to sending full files. Supports 15 languages.
+An **MCP server** that indexes local and GitHub codebases via tree-sitter AST parsing, then exposes 22 tools for symbol retrieval, code graph traversal, and impact analysis — all with byte-offset precision to cut token costs by ~99% compared to sending full files. Supports 15 languages.
 
 Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gravelle, with code graph techniques from [CodeGraphContext](https://github.com/CodeGraphContext/CodeGraphContext) and security patterns from [basalt-mcp](https://github.com/cmillstead/basalt-mcp).
 
@@ -187,7 +187,7 @@ Use `Read` only for content that isn't a named symbol (config files, etc).
 
 ## Tools
 
-codesight-mcp exposes **17 MCP tools** organized into four categories:
+codesight-mcp exposes **22 MCP tools** organized into five categories:
 
 ### Indexing
 
@@ -225,6 +225,14 @@ codesight-mcp exposes **17 MCP tools** organized into four categories:
 | `get_type_hierarchy` | Show inheritance tree — parents and children of a class |
 | `get_imports` | Show import relationships for a file or symbol |
 | `get_impact` | Impact analysis — everything affected downstream of a change |
+
+### Analysis & Visualization
+
+| Tool | Description |
+| :--- | :--- |
+| `get_hotspots` | Find the most complex/risky symbols — cyclomatic complexity, cognitive complexity, nesting depth, fan-in/fan-out, composite risk score. Supports path filtering and sort modes. |
+| `get_key_symbols` | Rank symbols by structural importance using PageRank on the call graph. Identifies the most connected and depended-upon symbols. |
+| `get_diagram` | Generate Mermaid diagrams — call graphs, type hierarchies, import trees, and impact diagrams from the code graph. |
 
 ---
 
