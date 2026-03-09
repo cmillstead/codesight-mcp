@@ -1,5 +1,6 @@
 """Tests for adversarial scan v2 findings (2026-03-08b)."""
 
+import gzip
 import importlib
 import json
 import os
@@ -12,7 +13,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from codesight_mcp.security import sanitize_signature_for_api
-from codesight_mcp.storage.index_store import IndexStore
+from codesight_mcp.storage.index_store import IndexStore, _safe_gzip_decompress
 from codesight_mcp.summarizer.batch_summarize import (
     BatchSummarizer,
     _contains_injection_phrase,
@@ -52,6 +53,62 @@ class TestGitHookEnvFileSafety:
             assert "600" in content, (
                 f"{hook_name} doesn't check for 0600 permissions"
             )
+
+
+# ---------------------------------------------------------------------------
+# ADV-HIGH-1: Gzip decompression bomb protection
+# ---------------------------------------------------------------------------
+
+class TestGzipBombProtection:
+    """ADV-HIGH-1: gzip decompression must be capped at MAX_INDEX_SIZE."""
+
+    def test_safe_decompress_normal_data(self):
+        """Normal compressed data decompresses successfully."""
+        data = b'{"hello": "world"}'
+        compressed = gzip.compress(data)
+        result = _safe_gzip_decompress(compressed)
+        assert result == data
+
+    def test_safe_decompress_rejects_oversized(self):
+        """Data that decompresses beyond max_size is rejected."""
+        # Create data that decompresses to > 1024 bytes
+        big_data = b"x" * 2000
+        compressed = gzip.compress(big_data)
+        with pytest.raises(ValueError, match="exceeds maximum size"):
+            _safe_gzip_decompress(compressed, max_size=1024)
+
+    def test_load_index_rejects_gzip_bomb(self, tmp_path):
+        """load_index rejects a gzip bomb that decompresses beyond MAX_INDEX_SIZE."""
+        store = IndexStore(base_path=str(tmp_path))
+        # Create a valid-looking but oversized index
+        big_index = {
+            "repo": "test/repo", "owner": "test", "name": "repo",
+            "indexed_at": "2026-01-01T00:00:00",
+            "source_files": [], "languages": {}, "symbols": [],
+            "index_version": 2, "file_hashes": {}, "git_head": "",
+            "_pad": "x" * 2000,
+        }
+        json_bytes = json.dumps(big_index).encode("utf-8")
+        compressed = gzip.compress(json_bytes)
+        (tmp_path / "test__repo.json.gz").write_bytes(compressed)
+
+        # With a tiny max_size, this should be rejected
+        with patch("codesight_mcp.storage.index_store.MAX_INDEX_SIZE", 500):
+            with patch("codesight_mcp.storage.index_store._safe_gzip_decompress",
+                       side_effect=lambda raw, max_size=500: _safe_gzip_decompress(raw, max_size=500)):
+                result = store.load_index("test", "repo")
+                assert result is None
+
+    def test_list_repos_rejects_gzip_bomb(self, tmp_path):
+        """list_repos skips gzip bombs without crashing."""
+        store = IndexStore(base_path=str(tmp_path))
+        big_data = b"x" * 2000
+        compressed = gzip.compress(big_data)
+        (tmp_path / "bomb__repo.json.gz").write_bytes(compressed)
+
+        # Should not crash, just skip the bad file
+        repos = store.list_repos()
+        assert len(repos) == 0
 
 
 # ---------------------------------------------------------------------------

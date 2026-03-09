@@ -389,7 +389,7 @@ class TestSafeWriteContentSymlink:
                 raw_files={"test.py": "def foo(): pass\n"},
                 languages={"python": 1},
             )
-            index_path = Path(tmp) / "owner__repo.json"
+            index_path = Path(tmp) / "owner__repo.json.gz"
             mode = oct(index_path.stat().st_mode & 0o777)
             assert mode == "0o600", f"Index file should be 0o600, got {mode}"
 

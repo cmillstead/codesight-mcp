@@ -284,10 +284,14 @@ def discover_local_files(
 
     # File count limit with prioritization
     if len(files) > max_files:
+        total_found = len(files)
         files.sort(key=lambda fp: _priority_key(
             fp.relative_to(root).as_posix()
         ))
         files = files[:max_files]
+        warnings.append(
+            f"Truncated {total_found} files to {max_files} (prioritizing src/, lib/, pkg/)"
+        )
 
     return files, warnings
 

@@ -635,16 +635,19 @@ class TestGetSymbolVerify:
             sym_id = func_symbols[0].id
 
             # Corrupt the stored content_hash directly in the index JSON
+            import gzip as _gzip
             import json
             from pathlib import Path
-            index_path = Path(storage) / "local__verifytest.json"
+            index_path = Path(storage) / "local__verifytest.json.gz"
             assert index_path.exists(), f"Index file not found: {index_path}"
 
-            data = json.loads(index_path.read_text(encoding="utf-8"))
+            raw = _gzip.decompress(index_path.read_bytes())
+            data = json.loads(raw.decode("utf-8"))
             for sym in data.get("symbols", []):
                 if sym.get("id") == sym_id:
                     sym["content_hash"] = "0" * 64  # intentionally wrong hash
-            index_path.write_text(json.dumps(data), encoding="utf-8")
+            compressed = _gzip.compress(json.dumps(data).encode("utf-8"))
+            index_path.write_bytes(compressed)
 
             result = get_symbol(
                 repo="local/verifytest",

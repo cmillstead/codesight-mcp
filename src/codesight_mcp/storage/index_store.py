@@ -1,8 +1,11 @@
 """Index storage with save/load, byte-offset content retrieval, and incremental indexing."""
 
 import errno
+import gzip
 import hashlib
+import io
 import json
+import logging
 import os
 import re
 import shutil
@@ -11,6 +14,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from ..parser.symbols import Symbol
 from ..security import sanitize_repo_identifier, sanitize_signature_for_api
@@ -25,13 +30,31 @@ INDEX_VERSION = 2
 _HASH_RE = re.compile(r"[0-9a-f]{64}")
 
 
+def _safe_gzip_decompress(raw_bytes: bytes, max_size: int = MAX_INDEX_SIZE) -> bytes:
+    """Decompress gzip data with a decompressed size cap.
+
+    ADV-HIGH-1: Prevents gzip decompression bombs by streaming through
+    GzipFile and rejecting data that exceeds max_size when decompressed.
+    A small compressed file (e.g. 1 MB) could decompress to gigabytes
+    without this check.
+
+    Raises ValueError if decompressed size exceeds max_size.
+    """
+    with gzip.GzipFile(fileobj=io.BytesIO(raw_bytes)) as gz:
+        result = gz.read(max_size + 1)
+        if len(result) > max_size:
+            raise ValueError(
+                f"Decompressed index exceeds maximum size ({max_size} bytes)"
+            )
+        return result
+
+
 def _open_nofollow_text(path: "Path") -> "io.TextIOWrapper":
     """Open a file for reading with O_NOFOLLOW to prevent symlink attacks.
 
     Raises OSError with errno.ELOOP if the path is a symlink.
     ADV-LOW-2: Wraps io.open in try/except to close fd on failure.
     """
-    import io
     fd = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW)
     try:
         return io.open(fd, "r", encoding="utf-8")
@@ -160,16 +183,23 @@ class IndexStore:
         ongoing write.
         """
         now = time.time()
-        for tmp_file in self.base_path.glob("*.json.tmp"):
-            try:
-                if (now - tmp_file.stat().st_mtime) < 60:
-                    continue  # skip recent files — may be active write
-                tmp_file.unlink()
-            except OSError:
-                pass
+        for pattern in ("*.json.tmp", "*.json.gz.tmp"):
+            for tmp_file in self.base_path.glob(pattern):
+                try:
+                    if (now - tmp_file.stat().st_mtime) < 60:
+                        continue  # skip recent files — may be active write
+                    tmp_file.unlink()
+                except OSError:
+                    pass
 
     def _index_path(self, owner: str, name: str) -> Path:
-        """Path to index JSON file."""
+        """Path to compressed index file (.json.gz)."""
+        sanitize_repo_identifier(owner)
+        sanitize_repo_identifier(name)
+        return self.base_path / f"{owner}__{name}.json.gz"
+
+    def _legacy_index_path(self, owner: str, name: str) -> Path:
+        """Path to uncompressed index file (.json) for backward compat."""
         sanitize_repo_identifier(owner)
         sanitize_repo_identifier(name)
         return self.base_path / f"{owner}__{name}.json"
@@ -285,12 +315,18 @@ class IndexStore:
                     except OSError:
                         continue  # Symlink or permission error — skip
 
-                # Phase 2: write the JSON index to its .tmp path
+                # Phase 2: write the compressed JSON index to its .tmp path
                 # NOTE: ENOSPC or other OS error here leaves Phase-1 content .tmp files orphaned.
                 # _cleanup_stale_temps() (called on next IndexStore.__init__) recovers them.
                 index_path = self._index_path(owner, name)
-                json_data = json.dumps(self._index_to_dict(index), indent=2)
-                self._atomic_write(index_path, json_data)
+                json_bytes = json.dumps(self._index_to_dict(index), indent=2).encode("utf-8")
+                compressed = gzip.compress(json_bytes, compresslevel=6)
+                self._atomic_write(index_path, compressed)
+
+                # Remove legacy uncompressed index if it exists
+                legacy = self._legacy_index_path(owner, name)
+                if legacy.exists():
+                    legacy.unlink(missing_ok=True)
 
                 # Phase 3: rename all content .tmp → final (after JSON succeeded)
                 for final, tmp in content_tmp_paths:
@@ -305,25 +341,44 @@ class IndexStore:
             return index
 
     def load_index(self, owner: str, name: str) -> Optional[CodeIndex]:
-        """Load index from storage. Rejects incompatible versions."""
+        """Load index from storage. Supports both gzip and legacy JSON formats."""
         index_path = self._index_path(owner, name)
+        legacy_path = self._legacy_index_path(owner, name)
 
-        if not index_path.exists():
+        # Try compressed first, fall back to legacy
+        if index_path.exists():
+            load_path = index_path
+            compressed = True
+        elif legacy_path.exists():
+            load_path = legacy_path
+            compressed = False
+        else:
             return None
 
         # Index size validation
-        size = index_path.stat().st_size
+        size = load_path.stat().st_size
         if size > MAX_INDEX_SIZE:
             raise ValueError(f"Index file exceeds maximum size ({size} > {MAX_INDEX_SIZE})")
 
         try:
-            f = _open_nofollow_text(index_path)
+            fd = os.open(str(load_path), os.O_RDONLY | os.O_NOFOLLOW)
         except OSError as exc:
             if exc.errno == errno.ELOOP:
                 return None  # Symlink — reject
             raise
-        with f:
-            data = json.load(f)
+
+        with os.fdopen(fd, "rb") as raw_f:
+            raw_bytes = raw_f.read()
+
+        if compressed:
+            try:
+                # ADV-HIGH-1: streaming decompression with size cap
+                json_bytes = _safe_gzip_decompress(raw_bytes)
+            except (gzip.BadGzipFile, OSError, ValueError):
+                return None  # Corrupt gzip or decompression bomb — reject
+            data = json.loads(json_bytes.decode("utf-8"))
+        else:
+            data = json.loads(raw_bytes.decode("utf-8"))
 
         # Version check
         stored_version = data.get("index_version", 1)
@@ -618,10 +673,16 @@ class IndexStore:
                     except OSError:
                         continue  # Symlink or permission error — skip
 
-                # Phase 2: write the updated JSON index to its .tmp path
+                # Phase 2: write the compressed JSON index to its .tmp path
                 index_path = self._index_path(owner, name)
-                json_data = json.dumps(self._index_to_dict(updated), indent=2)
-                self._atomic_write(index_path, json_data)
+                json_bytes = json.dumps(self._index_to_dict(updated), indent=2).encode("utf-8")
+                compressed = gzip.compress(json_bytes, compresslevel=6)
+                self._atomic_write(index_path, compressed)
+
+                # Remove legacy uncompressed index if it exists
+                legacy = self._legacy_index_path(owner, name)
+                if legacy.exists():
+                    legacy.unlink(missing_ok=True)
 
                 # Phase 3: remove deleted files from content dir (containment-validated)
                 for fp in deleted_files:
@@ -644,53 +705,72 @@ class IndexStore:
             return updated
 
     def list_repos(self) -> list[dict]:
-        """List all indexed repositories."""
+        """List all indexed repositories (supports both .json.gz and .json)."""
         repos = []
+        seen_repos: set[str] = set()  # avoid listing both legacy and compressed
 
-        for index_file in self.base_path.glob("*.json"):
-            # Size limit check
-            try:
-                if index_file.stat().st_size > MAX_INDEX_SIZE:
+        for pattern in ("*.json.gz", "*.json"):
+            for index_file in self.base_path.glob(pattern):
+                # Skip .tmp files and lock files
+                if index_file.name.endswith(".tmp") or index_file.name.endswith(".lock"):
                     continue
-            except OSError:
-                continue
-            try:
-                f = _open_nofollow_text(index_file)
-                with f:
-                    data = json.load(f)
-
-                # Validate required fields before accessing
-                if not all(k in data for k in ("repo", "indexed_at", "symbols", "source_files", "languages")):
+                # Size limit check
+                try:
+                    if index_file.stat().st_size > MAX_INDEX_SIZE:
+                        continue
+                except OSError:
                     continue
+                try:
+                    fd = os.open(str(index_file), os.O_RDONLY | os.O_NOFOLLOW)
+                    with os.fdopen(fd, "rb") as raw_f:
+                        raw_bytes = raw_f.read()
 
-                # Type-validate key string fields to prevent injection / errors
-                if not isinstance(data.get("repo"), str) or not isinstance(data.get("indexed_at"), str):
+                    if index_file.name.endswith(".gz"):
+                        # ADV-HIGH-1: streaming decompression with size cap
+                        json_bytes = _safe_gzip_decompress(raw_bytes)
+                        data = json.loads(json_bytes.decode("utf-8"))
+                    else:
+                        data = json.loads(raw_bytes.decode("utf-8"))
+
+                    # Validate required fields before accessing
+                    if not all(k in data for k in ("repo", "indexed_at", "symbols", "source_files", "languages")):
+                        continue
+
+                    # Type-validate key string fields to prevent injection / errors
+                    if not isinstance(data.get("repo"), str) or not isinstance(data.get("indexed_at"), str):
+                        continue
+
+                    repo_key = data["repo"]
+                    if repo_key in seen_repos:
+                        continue
+                    seen_repos.add(repo_key)
+
+                    repos.append({
+                        "repo": data["repo"],
+                        "indexed_at": data["indexed_at"],
+                        "symbol_count": len(data["symbols"]),
+                        "file_count": len(data["source_files"]),
+                        "languages": data["languages"],
+                        "index_version": data.get("index_version", 1),
+                    })
+                except Exception:
                     continue
-
-                repos.append({
-                    "repo": data["repo"],
-                    "indexed_at": data["indexed_at"],
-                    "symbol_count": len(data["symbols"]),
-                    "file_count": len(data["source_files"]),
-                    "languages": data["languages"],
-                    "index_version": data.get("index_version", 1),
-                })
-            except Exception:
-                continue
 
         return repos
 
     def delete_index(self, owner: str, name: str) -> bool:
         """Delete an index and its raw files."""
         index_path = self._index_path(owner, name)
+        legacy_path = self._legacy_index_path(owner, name)
         content_dir = self._content_dir(owner, name)
 
         with exclusive_file_lock(self._repo_lock_path(owner, name)):
             deleted = False
 
-            if index_path.exists():
-                index_path.unlink()
-                deleted = True
+            for ipath in (index_path, legacy_path):
+                if ipath.exists():
+                    ipath.unlink()
+                    deleted = True
 
             if content_dir.is_symlink():
                 # Symlink to another directory — remove the link, not the target

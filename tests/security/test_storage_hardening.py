@@ -16,7 +16,7 @@ class TestIdentifierSanitization:
         with tempfile.TemporaryDirectory() as tmp:
             store = IndexStore(tmp)
             path = store._index_path("owner", "repo")
-            assert "owner__repo.json" in str(path)
+            assert "owner__repo.json.gz" in str(path)
 
     def test_traversal_in_owner(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -61,14 +61,18 @@ class TestIndexSizeValidation:
 
             # Bloat the index file beyond the limit
             index_path = store._index_path("test", "repo")
-            with open(index_path, "r") as f:
-                data = json.load(f)
 
-            # Pad with junk to exceed 50 MB
+            import gzip as _gzip
+            with open(index_path, "rb") as f:
+                data = json.loads(_gzip.decompress(f.read()).decode("utf-8"))
+
+            # Pad with junk to exceed size limit (write uncompressed to trigger size check)
             from codesight_mcp.core.limits import MAX_INDEX_SIZE
             data["_pad"] = "x" * (MAX_INDEX_SIZE + 1)
-            with open(index_path, "w") as f:
-                json.dump(data, f)
+            # Write oversized data as compressed — but the file itself will exceed MAX_INDEX_SIZE
+            bloated = json.dumps(data).encode("utf-8")
+            with open(index_path, "wb") as f:
+                f.write(bloated)  # uncompressed so stat().st_size exceeds limit
 
             with pytest.raises(ValueError, match="exceeds maximum size"):
                 store.load_index("test", "repo")
@@ -184,7 +188,7 @@ class TestLoadIndexNoFollow:
                 )
 
                 # Locate the real index file and replace it with a symlink
-                index_file = Path(storage_tmp) / "test__repo.json"
+                index_file = Path(storage_tmp) / "test__repo.json.gz"
                 assert index_file.exists()
                 decoy = Path(other_tmp) / "decoy.txt"
                 decoy.write_text("not a valid index")
@@ -300,7 +304,7 @@ class TestTempFileONofollow:
             pytest.skip("O_NOFOLLOW not available on Windows")
 
         store = IndexStore(base_path=str(tmp_path))
-        tmp_file = tmp_path / "local__testrepo.json.tmp"
+        tmp_file = tmp_path / "local__testrepo.json.gz.tmp"
         decoy = tmp_path / "decoy.txt"
         decoy.write_text("decoy content")
         tmp_file.symlink_to(decoy)
