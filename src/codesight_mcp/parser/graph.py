@@ -303,3 +303,57 @@ class CodeGraph:
                     queue.append((caller, depth + 1))
 
         return affected
+
+    # ------------------------------------------------------------------
+    # PageRank
+    # ------------------------------------------------------------------
+
+    def pagerank(
+        self,
+        damping: float = 0.85,
+        max_iterations: int = 50,
+        tolerance: float = 0.0001,
+    ) -> dict[str, float]:
+        """Compute PageRank scores for all symbols in the call graph.
+
+        Args:
+            damping: Damping factor (probability of following a link). Default 0.85.
+            max_iterations: Maximum iterations before stopping. Default 50.
+            tolerance: Convergence threshold (max rank change). Default 0.0001.
+
+        Returns:
+            Dict mapping symbol_id -> rank score. Ranks sum to N (node count).
+        """
+        nodes = list(self._symbols_by_id.keys())
+        n = len(nodes)
+        if n == 0:
+            return {}
+
+        # Initialize ranks equally
+        rank = {nid: 1.0 for nid in nodes}
+
+        for _ in range(max_iterations):
+            # Collect rank from dangling nodes (no outgoing edges)
+            dangling_sum = sum(
+                rank[nid] for nid in nodes
+                if not self._calls_fwd.get(nid, set())
+            )
+
+            new_rank: dict[str, float] = {}
+            for nid in nodes:
+                incoming = self._calls_rev.get(nid, set())
+                # Base: teleportation + redistributed dangling rank
+                total = (1.0 - damping) + damping * dangling_sum / n
+                for caller in incoming:
+                    out_degree = len(self._calls_fwd.get(caller, set()))
+                    if out_degree > 0:
+                        total += damping * rank[caller] / out_degree
+                new_rank[nid] = total
+
+            # Check convergence
+            max_delta = max(abs(new_rank[nid] - rank[nid]) for nid in nodes)
+            rank = new_rank
+            if max_delta < tolerance:
+                break
+
+        return rank

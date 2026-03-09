@@ -144,3 +144,67 @@ def test_impact():
     assert "a.py::bar" in affected
     assert "a.py::foo" in affected
     assert "a.py::baz" not in affected
+
+
+class TestPageRank:
+    """Test PageRank on the call graph."""
+
+    def test_empty_graph(self):
+        g = CodeGraph.build([])
+        ranks = g.pagerank()
+        assert ranks == {}
+
+    def test_single_node(self):
+        syms = _make_symbols(("a.py::foo", "a.py", "foo", [], []))
+        g = CodeGraph.build(syms)
+        ranks = g.pagerank()
+        assert "a.py::foo" in ranks
+        assert abs(ranks["a.py::foo"] - 1.0) < 0.01
+
+    def test_hub_gets_highest_rank(self):
+        """A symbol called by many others should rank highest."""
+        syms = _make_symbols(
+            ("a.py::hub", "a.py", "hub", [], []),
+            ("a.py::a", "a.py", "a", ["hub"], []),
+            ("b.py::b", "b.py", "b", ["hub"], []),
+            ("c.py::c", "c.py", "c", ["hub"], []),
+            ("d.py::d", "d.py", "d", ["hub"], []),
+        )
+        g = CodeGraph.build(syms)
+        ranks = g.pagerank()
+        assert ranks["a.py::hub"] > ranks["a.py::a"]
+        assert ranks["a.py::hub"] > ranks["b.py::b"]
+
+    def test_chain_rank_propagation(self):
+        """Rank propagates through call chains: a->b->c, c gets rank from b."""
+        syms = _make_symbols(
+            ("a.py::a", "a.py", "a", ["b"], []),
+            ("a.py::b", "a.py", "b", ["c"], []),
+            ("a.py::c", "a.py", "c", [], []),
+        )
+        g = CodeGraph.build(syms)
+        ranks = g.pagerank()
+        assert ranks["a.py::c"] > ranks["a.py::a"]
+
+    def test_ranks_sum_to_n(self):
+        """All ranks should sum approximately to N."""
+        syms = _make_symbols(
+            ("a.py::a", "a.py", "a", ["b"], []),
+            ("a.py::b", "a.py", "b", ["c"], []),
+            ("a.py::c", "a.py", "c", [], []),
+        )
+        g = CodeGraph.build(syms)
+        ranks = g.pagerank()
+        total = sum(ranks.values())
+        assert abs(total - len(ranks)) < 0.01
+
+    def test_damping_factor(self):
+        """Custom damping factor is respected."""
+        syms = _make_symbols(
+            ("a.py::a", "a.py", "a", ["b"], []),
+            ("a.py::b", "a.py", "b", [], []),
+        )
+        g = CodeGraph.build(syms)
+        ranks_85 = g.pagerank(damping=0.85)
+        ranks_50 = g.pagerank(damping=0.50)
+        assert ranks_85 != ranks_50
