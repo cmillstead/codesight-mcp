@@ -31,9 +31,23 @@ def parse_repo(
     if "/" in repo:
         owner, name = repo.split("/", 1)
     else:
+        import re
+
         store = IndexStore(base_path=storage_path)
         repos = store.list_repos()
+        # 1. Exact name match (e.g. "myproject" matches "acme/myproject")
         matching = [r for r in repos if r["repo"].endswith(f"/{repo}")]
+        # 2. Prefix match for local hash-suffixed repos
+        #    (e.g. "codesight-mcp" matches "local/codesight-mcp-b1d9a2d53f7f")
+        if not matching:
+            _hash_suffix = re.compile(r"^(.+)-[0-9a-f]{12}$")
+            matching = []
+            for r in repos:
+                repo_name = r["repo"].rsplit("/", 1)[-1]
+                m = _hash_suffix.match(repo_name)
+                if m and m.group(1) == repo:
+                    matching.append(r)
+
         if not matching:
             raise RepoNotFoundError(f"Repository not found: {repo}")
         if len(matching) > 1:
