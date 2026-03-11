@@ -322,12 +322,17 @@ class IndexStore:
             # Phase 1: write all content files to .tmp paths first so that any
             # write failure leaves the existing index intact (no split state).
             content_tmp_paths: list[tuple[Path, Path]] = []  # (final, tmp)
+            skipped_count = 0
             try:
                 for file_path, content in raw_files.items():
                     dest = (content_dir / file_path).resolve()
                     resolved_root = content_dir.resolve()
                     if not is_within(resolved_root, dest):
-                        continue  # Traversal — skip silently
+                        skipped_count += 1
+                        logger.warning(
+                            "Skipped content file due to path traversal: destination outside content dir"
+                        )
+                        continue
                     _makedirs_0o700(str(dest.parent))
                     tmp_dest = dest.with_name(f"{dest.name}.tmp.{os.getpid()}.{threading.get_ident()}")
                     try:
@@ -697,11 +702,16 @@ class IndexStore:
             # Phase 1: write changed + new content files to .tmp paths first so
             # that any write failure leaves the existing index intact (no split state).
             content_tmp_paths: list[tuple[Path, Path]] = []  # (final, tmp)
+            skipped_count = 0
             try:
                 for fp, content in raw_files.items():
                     dest = (content_dir / fp).resolve()
                     if not is_within(resolved_root, dest):
-                        continue  # Traversal — skip silently
+                        skipped_count += 1
+                        logger.warning(
+                            "Skipped content file due to path traversal: destination outside content dir"
+                        )
+                        continue
                     _makedirs_0o700(str(dest.parent))
                     tmp_dest = dest.with_name(f"{dest.name}.tmp.{os.getpid()}.{threading.get_ident()}")
                     try:
@@ -731,7 +741,10 @@ class IndexStore:
                 for fp in deleted_files:
                     dead = (content_dir / fp).resolve()
                     if not is_within(resolved_root, dead):
-                        continue  # Traversal — skip silently
+                        logger.warning(
+                            "Skipped deleting content file due to path traversal: destination outside content dir"
+                        )
+                        continue
                     if dead.exists():
                         try:
                             dead.unlink()
