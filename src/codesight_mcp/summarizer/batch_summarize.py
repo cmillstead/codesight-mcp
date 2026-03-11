@@ -297,11 +297,9 @@ class BatchSummarizer:
             system_part = prompt[:m.start()].strip()
             user_part = prompt[m.end():].strip()
             return system_part, user_part
-        # Fallback: static marker (backward compat)
-        if "<<<SPLIT>>>" in prompt:
-            system_part, user_part = prompt.split("<<<SPLIT>>>", 1)
-            return system_part.strip(), user_part.strip()
-        # Fallback: entire prompt as user message
+        # No nonce-verified marker found — treat entire prompt as user message.
+        # The static <<<SPLIT>>> fallback was removed because an attacker could
+        # embed it in a signature to hijack the system/user split boundary.
         return "", prompt
 
     def _parse_response(self, text: str, expected_count: int, nonce: str) -> list[str]:

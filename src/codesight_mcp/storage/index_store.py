@@ -22,7 +22,7 @@ from ..parser.symbols import Symbol
 from ..security import sanitize_repo_identifier, sanitize_signature_for_api
 from ..summarizer.batch_summarize import _contains_injection_phrase, _VALID_KINDS
 from ..core.limits import MAX_INDEX_SIZE, MAX_FILE_SIZE
-from ..core.locking import exclusive_file_lock
+from ..core.locking import exclusive_file_lock, _UMASK_LOCK
 from ..core.validation import validate_path, ValidationError, is_within
 
 # Bump this when the index schema changes in an incompatible way.
@@ -69,9 +69,6 @@ def _file_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-_UMASK_LOCK = threading.Lock()
-
-
 def _makedirs_0o700(path: str) -> None:
     """Create directories with mode 0o700, respecting the umask correctly.
 
@@ -102,6 +99,30 @@ def _makedirs_0o700(path: str) -> None:
     finally:
         os.close(_fd)
 
+
+def _safe_rmtree(root: Path) -> None:
+    """Remove a directory tree without following symlinks.
+
+    Unlike shutil.rmtree, this implementation skips symlinks within the
+    tree rather than following them — preventing an attacker from planting
+    a symlink inside a content directory to trick delete_index into
+    deleting files outside the storage root.
+    """
+    for dirpath, dirnames, filenames in os.walk(root, topdown=False):
+        dp = Path(dirpath)
+        for fn in filenames:
+            fp = dp / fn
+            if fp.is_symlink():
+                fp.unlink()  # Remove the symlink itself, don't follow
+            else:
+                fp.unlink()
+        for dn in dirnames:
+            dd = dp / dn
+            if dd.is_symlink():
+                dd.unlink()  # Remove symlink, don't recurse into target
+            else:
+                dd.rmdir()
+    root.rmdir()
 
 
 @dataclass
@@ -254,7 +275,9 @@ class IndexStore:
             final_path: Destination path (must not be a symlink).
             data: Bytes or str to write.  str is encoded as UTF-8.
         """
-        tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
+        tmp_path = final_path.with_name(
+            f"{final_path.name}.tmp.{os.getpid()}.{threading.get_ident()}"
+        )
         try:
             if isinstance(data, bytes):
                 fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
@@ -387,22 +410,20 @@ class IndexStore:
         else:
             return None
 
-        # Index size validation
-        try:
-            size = load_path.stat().st_size
-        except FileNotFoundError:
-            return None
-        if size > MAX_INDEX_SIZE:
-            raise ValueError(f"Index file exceeds maximum size ({size} > {MAX_INDEX_SIZE})")
-
+        # Open with O_NOFOLLOW first, then fstat on the open fd to avoid
+        # TOCTOU between stat() and open() (the old code called stat() which
+        # follows symlinks, then open() with O_NOFOLLOW).
         try:
             fd = os.open(str(load_path), os.O_RDONLY | os.O_NOFOLLOW)
         except OSError as exc:
-            if exc.errno == errno.ELOOP:
-                return None  # Symlink — reject
+            if exc.errno in (errno.ELOOP, errno.ENOENT):
+                return None  # Symlink or vanished between exists() check — reject
             raise
 
         with os.fdopen(fd, "rb") as raw_f:
+            size = os.fstat(raw_f.fileno()).st_size
+            if size > MAX_INDEX_SIZE:
+                raise ValueError(f"Index file exceeds maximum size ({size} > {MAX_INDEX_SIZE})")
             raw_bytes = raw_f.read()
 
         if compressed:
@@ -470,7 +491,7 @@ class IndexStore:
         # string (SHA-256). Discard malformed hashes to prevent verify=True from
         # reporting a spurious mismatch against an arbitrary attacker-controlled string.
         for sym in data["symbols"]:
-            for fld in ("signature", "docstring", "summary"):
+            for fld in ("signature", "docstring", "summary", "name", "file"):
                 if fld in sym and isinstance(sym[fld], str):
                     sym[fld] = sanitize_signature_for_api(sym[fld])
             # ADV-MED-3: Clear summaries containing injection phrases
@@ -848,7 +869,7 @@ class IndexStore:
                 content_dir.unlink()
                 deleted = True
             elif content_dir.exists():
-                shutil.rmtree(content_dir)
+                _safe_rmtree(content_dir)
                 deleted = True
 
             return deleted
@@ -886,7 +907,11 @@ class IndexStore:
         return True
 
     def _symbol_to_dict(self, symbol: Symbol) -> dict:
-        """Convert Symbol to dict (without source content)."""
+        """Convert Symbol to dict (without source content).
+
+        Sanitizes signature, docstring, and summary at save time to
+        prevent secrets from being persisted to disk in plaintext.
+        """
         return {
             "id": symbol.id,
             "file": symbol.file,
@@ -894,9 +919,9 @@ class IndexStore:
             "qualified_name": symbol.qualified_name,
             "kind": symbol.kind,
             "language": symbol.language,
-            "signature": symbol.signature,
-            "docstring": symbol.docstring,
-            "summary": symbol.summary,
+            "signature": sanitize_signature_for_api(symbol.signature),
+            "docstring": sanitize_signature_for_api(symbol.docstring),
+            "summary": sanitize_signature_for_api(symbol.summary),
             "decorators": symbol.decorators,
             "keywords": symbol.keywords,
             "parent": symbol.parent,

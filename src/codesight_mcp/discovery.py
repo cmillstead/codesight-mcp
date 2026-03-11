@@ -60,6 +60,20 @@ class _RedactAuthFilter(logging.Filter):
 logging.getLogger("httpx").addFilter(_RedactAuthFilter())
 
 
+def _fully_unquote(path: str, max_rounds: int = 5) -> str:
+    """Unquote a URL-encoded path until stable (no more encoded chars).
+
+    Prevents double-encoded traversal bypasses like %252e%252e which
+    a single unquote() call would decode to %2e%2e, missing the '..'
+    """
+    for _ in range(max_rounds):
+        decoded = unquote(path)
+        if decoded == path:
+            break
+        path = decoded
+    return path
+
+
 def should_skip_file(path: str) -> bool:
     """Check if a file should be skipped based on path patterns.
 
@@ -424,7 +438,7 @@ async def fetch_file_content(
     Returns:
         File content as a string.
     """
-    if ".." in unquote(path):
+    if ".." in _fully_unquote(path):
         raise ValueError("File path contains traversal sequence")
     owner = quote(owner, safe="")
     repo = quote(repo, safe="")

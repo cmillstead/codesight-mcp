@@ -210,9 +210,9 @@ def sanitize_signature_for_api(signature: str) -> str:
     """
     if not isinstance(signature, str):
         return ""
-    if len(signature) > 10000:
-        signature = signature[:10000]
     if _no_redact():
+        if len(signature) > 10000:
+            signature = signature[:10000]
         return signature
     # ADV-MED-1: Strip DEL, C1 controls, and Unicode format chars (category Cf)
     cleaned = "".join(
@@ -221,7 +221,12 @@ def sanitize_signature_for_api(signature: str) -> str:
     )
     # ADV-MED-1: NFKD normalization reduces confusables to ASCII equivalents
     cleaned = unicodedata.normalize("NFKD", cleaned)
-    return _INLINE_SECRET_RE.sub("<REDACTED>", cleaned)
+    # Redact secrets BEFORE truncation so a secret at the boundary is
+    # not split in half and left partially visible.
+    cleaned = _INLINE_SECRET_RE.sub("<REDACTED>", cleaned)
+    if len(cleaned) > 10000:
+        cleaned = cleaned[:10000]
+    return cleaned
 
 
 def sanitize_repo_identifier(identifier: str) -> str:
