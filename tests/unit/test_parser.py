@@ -80,6 +80,26 @@ def test_symbol_byte_offsets():
         assert sym.end_line >= sym.line
 
 
+class TestSymbolIdNoCollision:
+    """Task 25: make_symbol_id must not produce collisions."""
+
+    def test_symbol_id_no_collision(self):
+        """Files like 'foo::bar.py' and 'foo__bar.py' must produce different IDs."""
+        from codesight_mcp.parser import make_symbol_id
+
+        id1 = make_symbol_id("foo::bar.py", "func", "function")
+        id2 = make_symbol_id("foo__bar.py", "func", "function")
+        assert id1 != id2, f"Collision: {id1!r} == {id2!r}"
+
+    def test_symbol_id_hash_no_collision(self):
+        """Qualified names with '#' must not collide with those using '_'."""
+        from codesight_mcp.parser import make_symbol_id
+
+        id1 = make_symbol_id("a.py", "Foo#bar", "method")
+        id2 = make_symbol_id("a.py", "Foo_bar", "method")
+        assert id1 != id2, f"Collision: {id1!r} == {id2!r}"
+
+
 class TestCollectCallsDepthLimit:
     """Task 23: _collect_calls must respect depth limit."""
 
