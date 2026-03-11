@@ -16,10 +16,12 @@ This repo is indexed in codesight-mcp. **Always use codesight-mcp tools instead 
 - `get_file_outline` — all symbols in a file with signatures
 - `get_symbol` — full source of a specific symbol by ID
 - `get_symbols` — batch retrieve multiple symbols by ID
+- `get_context` — symbol + sibling symbols + parent class info in one call
 
 ### Search
 - `search_symbols` — find functions, classes, methods by name, signature, or summary
 - `search_text` — full-text search across all files (returns file, line number, and matched text)
+- `search_references` — text search enriched with enclosing symbol context (function/class each hit is in)
 
 ### Code Graph
 - `get_callers` — find all callers of a symbol
@@ -28,6 +30,11 @@ This repo is indexed in codesight-mcp. **Always use codesight-mcp tools instead 
 - `get_type_hierarchy` — show inheritance chains for a class
 - `get_imports` — show import relationships for a symbol
 - `get_impact` — analyze impact of changing a symbol (callers + inheritors + importers)
+
+### Dependencies & Diffing
+- `get_dependencies` — external vs internal import analysis across the repo
+- `compare_symbols` — symbol-level diff between two indexed versions (by content hash)
+- `get_changes` — git diff → affected symbols → optional impact analysis
 
 Use `Read` only when you need content that isn't a named symbol (e.g. config files, pyproject.toml).
 

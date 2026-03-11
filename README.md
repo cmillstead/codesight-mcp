@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/tests-1432-brightgreen?style=flat-square" alt="Tests">
 </p>
 
-An **MCP server** that indexes local and GitHub codebases via tree-sitter AST parsing, then exposes 22 tools for symbol retrieval, code graph traversal, and impact analysis — all with byte-offset precision to cut token costs by ~99% compared to sending full files. Supports 15 languages.
+An **MCP server** that indexes local and GitHub codebases via tree-sitter AST parsing, then exposes 27 tools for symbol retrieval, code graph traversal, and impact analysis — all with byte-offset precision to cut token costs by ~99% compared to sending full files. Supports 15 languages.
 
 Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gravelle, with code graph techniques from [CodeGraphContext](https://github.com/CodeGraphContext/CodeGraphContext) and security patterns from [basalt-mcp](https://github.com/cmillstead/basalt-mcp).
 
@@ -51,7 +51,7 @@ Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gra
 - **6-step path validation chain** — null bytes, traversal, limits, resolution, containment, symlinks
 - **Content boundary markers** — indirect prompt injection defense (Microsoft spotlighting research)
 - **Error sanitization** — raw exceptions never reach the AI; system paths are always stripped
-- **1,432 tests** — adversarial, security, integration, benchmark, fuzz, and stress coverage with real temp directories
+- **1,538 tests** — adversarial, security, integration, benchmark, fuzz, and stress coverage with real temp directories
 
 ---
 
@@ -207,6 +207,7 @@ codesight-mcp exposes **22 MCP tools** organized into five categories:
 | `get_file_outline` | All symbols in a file with signatures and summaries |
 | `get_symbol` | Full source code of a specific symbol (byte-offset retrieval) |
 | `get_symbols` | Batch retrieval of multiple symbols in one call |
+| `get_context` | Symbol + sibling symbols + parent class info in one call |
 
 ### Search
 
@@ -214,6 +215,7 @@ codesight-mcp exposes **22 MCP tools** organized into five categories:
 |------|-------------|
 | `search_symbols` | Search symbols by name, signature, summary, or docstring |
 | `search_text` | Full-text search across indexed files (matches against redacted content) |
+| `search_references` | Text search enriched with enclosing symbol context per hit |
 
 ### Code Graph
 
@@ -233,6 +235,14 @@ codesight-mcp exposes **22 MCP tools** organized into five categories:
 | `get_hotspots` | Find the most complex/risky symbols — cyclomatic complexity, cognitive complexity, nesting depth, fan-in/fan-out, composite risk score. Supports path filtering and sort modes. |
 | `get_key_symbols` | Rank symbols by structural importance using PageRank on the call graph. Identifies the most connected and depended-upon symbols. |
 | `get_diagram` | Generate Mermaid diagrams — call graphs, type hierarchies, import trees, and impact diagrams from the code graph. |
+
+### Dependencies & Diffing
+
+| Tool | Description |
+|------|-------------|
+| `get_dependencies` | External vs internal import analysis — which packages are used and by which files |
+| `compare_symbols` | Symbol-level diff between two indexed versions using content hashes |
+| `get_changes` | Map git diff to affected symbols with optional downstream impact analysis |
 
 ---
 
