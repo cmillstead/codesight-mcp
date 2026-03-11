@@ -80,6 +80,31 @@ def test_symbol_byte_offsets():
         assert sym.end_line >= sym.line
 
 
+class TestCollectCallsDepthLimit:
+    """Task 23: _collect_calls must respect depth limit."""
+
+    def test_collect_calls_depth_limit(self):
+        """_extract_calls should not crash on deeply nested function bodies."""
+        # Build a Python source with deeply nested if blocks (300 levels)
+        lines = ["def outer():"]
+        for i in range(300):
+            indent = "    " * (i + 1)
+            lines.append(f"{indent}if True:")
+        # Place a function call at the deepest level
+        deepest_indent = "    " * 301
+        lines.append(f"{deepest_indent}deep_call()")
+        source = "\n".join(lines) + "\n"
+
+        symbols = parse_file(source, "deep.py", "python")
+        # Should parse without crashing (RecursionError)
+        assert len(symbols) >= 1
+        func_syms = [s for s in symbols if s.kind == "function"]
+        assert len(func_syms) == 1
+        # The deeply nested call may or may not be found due to depth limit,
+        # but the key thing is no crash
+        assert func_syms[0].name == "outer"
+
+
 class TestGetParserAllowlist:
     """SEC-LOW-5: _get_parser must reject unsupported languages."""
 
