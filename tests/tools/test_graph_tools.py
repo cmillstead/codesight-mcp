@@ -420,6 +420,38 @@ def test_get_impact_returns_truncated_flag(monkeypatch, tmp_path):
         assert "truncated" in result
 
 
+def test_get_callers_caps_results(tmp_path):
+    """get_callers should cap results to prevent unbounded growth."""
+    import inspect
+    source = inspect.getsource(get_callers)
+    assert "_MAX_RESULTS" in source or "max_results" in source, \
+        "get_callers should have a result cap"
+
+
+def test_get_callees_caps_results(tmp_path):
+    """get_callees should cap results to prevent unbounded growth."""
+    import inspect
+    source = inspect.getsource(get_callees)
+    assert "_MAX_RESULTS" in source or "max_results" in source, \
+        "get_callees should have a result cap"
+
+
+def test_get_callers_has_truncated_flag(graph_index):
+    """get_callers result should include 'truncated' key."""
+    result = get_callers("local/testgraph", "utils-py::validate#function", storage_path=graph_index["path"])
+    assert "error" not in result
+    assert "truncated" in result
+    assert result["truncated"] is False
+
+
+def test_get_callees_has_truncated_flag(graph_index):
+    """get_callees result should include 'truncated' key."""
+    result = get_callees("local/testgraph", "app-py::main#function", storage_path=graph_index["path"])
+    assert "error" not in result
+    assert "truncated" in result
+    assert result["truncated"] is False
+
+
 # ===================================================================
 # CodeGraph unit tests
 # ===================================================================

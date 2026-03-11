@@ -8,6 +8,9 @@ from ._common import prepare_graph_query, timed, elapsed_ms
 from .registry import ToolSpec, register
 
 
+_MAX_RESULTS = 500
+
+
 def get_callees(
     repo: str,
     symbol_id: str,
@@ -42,11 +45,15 @@ def get_callees(
     queue.append((symbol_id, 1))
 
     while queue:
+        if len(callees) >= _MAX_RESULTS:
+            break
         current_id, depth = queue.popleft()
         if depth > max_depth:
             continue
 
         for callee_id in graph.get_callees(current_id):
+            if len(callees) >= _MAX_RESULTS:
+                break
             if callee_id in visited:
                 continue
             visited.add(callee_id)
@@ -62,6 +69,8 @@ def get_callees(
             if depth < max_depth:
                 queue.append((callee_id, depth + 1))
 
+    truncated = len(callees) >= _MAX_RESULTS
+
     ms = elapsed_ms(start)
 
     target_name = target.get("name", "")
@@ -72,6 +81,7 @@ def get_callees(
         "symbol_name": wrap_untrusted_content(target_name),
         "max_depth": max_depth,
         "callee_count": len(callees),
+        "truncated": truncated,
         "callees": callees,
         "_meta": {
             **make_meta(source="code_index", trusted=False),
