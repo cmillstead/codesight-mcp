@@ -95,6 +95,7 @@ def get_dead_code(
     repo: str,
     language: Optional[str] = None,
     include_tests: bool = False,
+    limit: int = 100,
     storage_path: Optional[str] = None,
 ) -> dict:
     """Find symbols with zero callers (potentially dead code).
@@ -103,12 +104,16 @@ def get_dead_code(
         repo: Repository identifier (owner/repo or just repo name).
         language: Optional language filter (e.g. "python", "javascript").
         include_tests: If True, include symbols from test files (default False).
+        limit: Maximum results (default 100, max 500).
         storage_path: Custom storage path.
 
     Returns:
         Dict with list of potentially dead symbols and _meta envelope.
     """
     start = timed()
+
+    # ADV-MED-2: Clamp limit to prevent unbounded output.
+    limit = max(1, min(limit, 500))
 
     ctx = RepoContext.resolve(repo, storage_path)
     if isinstance(ctx, dict):
@@ -151,10 +156,15 @@ def get_dead_code(
 
     ms = elapsed_ms(start)
 
+    # ADV-MED-2: Cap output and signal truncation.
+    truncated = len(dead) > limit
+    dead = dead[:limit]
+
     return {
         "repo": f"{owner}/{name}",
         "dead_count": len(dead),
         "symbols": dead,
+        "truncated": truncated,
         "_meta": {
             **make_meta(source="code_index", trusted=False),
             "timing_ms": ms,
@@ -184,6 +194,11 @@ _spec = register(ToolSpec(
                 "description": "Include symbols from test files (default false)",
                 "default": False,
             },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum results (default 100, max 500)",
+                "default": 100,
+            },
         },
         "required": ["repo"],
     },
@@ -191,6 +206,7 @@ _spec = register(ToolSpec(
         repo=args["repo"],
         language=args.get("language"),
         include_tests=args.get("include_tests", False),
+        limit=args.get("limit", 100),
         storage_path=storage_path,
     ),
     untrusted=True,

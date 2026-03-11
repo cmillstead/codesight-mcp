@@ -97,8 +97,15 @@ def _dict_to_symbol(d: dict) -> Symbol | None:
         return None
 
 
-def _node_to_dict(node: SymbolNode) -> dict:
-    """Convert SymbolNode to output dict."""
+_MAX_NODE_DEPTH = 50
+
+
+def _node_to_dict(node: SymbolNode, _depth: int = 0) -> dict:
+    """Convert SymbolNode to output dict.
+
+    ADV-MED-6: Caps recursion at _MAX_NODE_DEPTH to prevent stack overflow
+    on adversarially deep symbol trees.
+    """
     result = {
         "id": wrap_untrusted_content(node.symbol.id),
         "kind": node.symbol.kind,
@@ -108,8 +115,8 @@ def _node_to_dict(node: SymbolNode) -> dict:
         "line": node.symbol.line,
     }
 
-    if node.children:
-        result["children"] = [_node_to_dict(c) for c in node.children]
+    if node.children and _depth < _MAX_NODE_DEPTH:
+        result["children"] = [_node_to_dict(c, _depth + 1) for c in node.children]
 
     return result
 

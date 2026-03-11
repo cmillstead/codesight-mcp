@@ -78,15 +78,14 @@ class TestAtomicWriteNofollow:
         assert tmp_files == []
 
     def test_symlink_target_rejected(self, tmp_path):
+        import os, threading
         real = tmp_path / "real.txt"
         real.write_text("original")
         link = tmp_path / "link.txt"
         link.symlink_to(real)
-        # The temp file (link.txt.tmp) is what gets O_NOFOLLOW, but if link.txt
-        # itself is a symlink, replace() will follow it. The key security
-        # property is that O_NOFOLLOW prevents opening a symlinked temp path.
-        # Creating a symlink at the .tmp path would trigger the error.
-        tmp_file = tmp_path / "link.txt.tmp"
+        # The temp file uses PID/thread-suffixed naming. Create a symlink at
+        # the exact path atomic_write_nofollow will try to open.
+        tmp_file = tmp_path / f"link.txt.tmp.{os.getpid()}.{threading.get_ident()}"
         tmp_file.symlink_to(real)
         with pytest.raises(OSError):
             atomic_write_nofollow(link, "evil")

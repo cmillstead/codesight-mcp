@@ -8,9 +8,12 @@ path traversal) is handled by ``discover_local_files()``.
 import errno
 import hashlib
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Optional
+
+_GIT_HASH_RE = re.compile(r"^[0-9a-f]{40}$")
 
 from ..discovery import discover_local_files
 from ..parser import LANGUAGE_EXTENSIONS
@@ -64,9 +67,12 @@ def _git_changed_files(folder_path: Path, since_commit: str) -> Optional[set[str
     Returns None on any error (invalid commit, git failure, etc.) to signal
     that the caller should fall back to a full re-index.
     """
+    # ADV-LOW-7: Validate commit hash format before passing to subprocess.
+    if not _GIT_HASH_RE.fullmatch(since_commit):
+        return None
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", since_commit, "HEAD"],
+            ["git", "diff", "--name-only", since_commit, "HEAD", "--"],
             capture_output=True,
             text=True,
             cwd=str(folder_path),

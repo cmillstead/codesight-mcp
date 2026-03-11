@@ -12,7 +12,7 @@ import shutil
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -29,6 +29,13 @@ from ..core.validation import validate_path, ValidationError, is_within
 INDEX_VERSION = 2
 
 _HASH_RE = re.compile(r"[0-9a-f]{64}")
+
+
+def _sanitize_list_item(item: str) -> str:
+    """ADV-LOW-5: Strip control chars and cap length for calls/imports list items."""
+    # Strip C0 (0x00-0x1F), DEL (0x7F), C1 (0x80-0x9F)
+    cleaned = "".join(c for c in item if not (ord(c) < 32 or ord(c) == 127 or 128 <= ord(c) <= 159))
+    return sanitize_signature_for_api(cleaned)[:200]
 
 
 def _safe_gzip_decompress(raw_bytes: bytes, max_size: int = MAX_INDEX_SIZE) -> bytes:
@@ -231,8 +238,16 @@ class IndexStore:
         ongoing write.
         """
         now = time.time()
-        for pattern in ("*.json.tmp", "*.json.gz.tmp"):
-            for tmp_file in self.base_path.glob(pattern):
+        # ADV-MED-5: Also clean PID/thread-suffixed temps and content dir temps.
+        patterns = [
+            ("*.json.tmp", False),
+            ("*.json.gz.tmp", False),
+            ("*.json.tmp.*", False),     # PID/thread-suffixed temps
+            ("*.json.gz.tmp.*", False),  # PID/thread-suffixed temps
+        ]
+        for pattern, recursive in patterns:
+            glob_fn = self.base_path.rglob if recursive else self.base_path.glob
+            for tmp_file in glob_fn(pattern):
                 try:
                     if tmp_file.is_symlink():
                         continue  # skip symlinks — don't follow or delete
@@ -241,6 +256,16 @@ class IndexStore:
                     tmp_file.unlink()
                 except OSError:
                     pass
+        # Clean temps in content subdirectories
+        for tmp_file in self.base_path.rglob("*.tmp.*"):
+            try:
+                if tmp_file.is_symlink():
+                    continue
+                if (now - tmp_file.lstat().st_mtime) < 60:
+                    continue
+                tmp_file.unlink()
+            except OSError:
+                pass
 
     def _index_path(self, owner: str, name: str) -> Path:
         """Path to compressed index file (.json.gz)."""
@@ -331,7 +356,7 @@ class IndexStore:
                 repo=f"{owner}/{name}",
                 owner=owner,
                 name=name,
-                indexed_at=datetime.now().isoformat(),
+                indexed_at=datetime.now(timezone.utc).isoformat(),
                 source_files=source_files,
                 languages=languages,
                 symbols=[self._symbol_to_dict(s) for s in symbols],
@@ -504,6 +529,14 @@ class IndexStore:
                     sanitize_signature_for_api(d) if isinstance(d, str) else d
                     for d in sym["decorators"]
                 ]
+            # ADV-LOW-5: Sanitize calls/imports list items
+            for list_field in ("calls", "imports"):
+                if list_field in sym and isinstance(sym[list_field], list):
+                    sym[list_field] = [
+                        _sanitize_list_item(item)
+                        for item in sym[list_field]
+                        if isinstance(item, str)
+                    ][:500]
             # ADV-LOW-5: Validate kind against known set
             if sym.get("kind") not in _VALID_KINDS:
                 sym["kind"] = "symbol"
@@ -708,7 +741,7 @@ class IndexStore:
                 repo=f"{owner}/{name}",
                 owner=owner,
                 name=name,
-                indexed_at=datetime.now().isoformat(),
+                indexed_at=datetime.now(timezone.utc).isoformat(),
                 source_files=sorted(old_files),
                 languages=languages,
                 symbols=all_symbols_dicts,
@@ -936,8 +969,9 @@ class IndexStore:
             "byte_offset": symbol.byte_offset,
             "byte_length": symbol.byte_length,
             "content_hash": symbol.content_hash,
-            "calls": symbol.calls,
-            "imports": symbol.imports,
+            # ADV-LOW-5: Sanitize list fields — strip control chars, cap length.
+            "calls": [_sanitize_list_item(c) for c in (symbol.calls or []) if isinstance(c, str)][:500],
+            "imports": [_sanitize_list_item(i) for i in (symbol.imports or []) if isinstance(i, str)][:500],
             "inherits_from": symbol.inherits_from,
             "implements": symbol.implements,
             "complexity": symbol.complexity,

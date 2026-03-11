@@ -164,8 +164,14 @@ def compute_complexity(node, language: str) -> dict:
     cognitive = 0
     max_nesting = 0
 
-    def walk(n, nesting_depth: int) -> None:
+    _MAX_WALK_DEPTH = 500
+
+    def walk(n, nesting_depth: int, _depth: int = 0) -> None:
         nonlocal cyclomatic, cognitive, max_nesting
+
+        # ADV-MED-8: Cap recursion depth to prevent stack overflow on deep ASTs.
+        if _depth >= _MAX_WALK_DEPTH:
+            return
 
         if n.type in branch_nodes:
             cyclomatic += 1
@@ -181,7 +187,7 @@ def compute_complexity(node, language: str) -> dict:
             max_nesting = new_depth
 
         for child in n.children:
-            walk(child, new_depth)
+            walk(child, new_depth, _depth + 1)
 
     # Walk the body, not the full function node (avoids counting the function itself)
     body = node.child_by_field_name("body")

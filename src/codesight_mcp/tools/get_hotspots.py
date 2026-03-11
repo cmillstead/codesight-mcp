@@ -41,6 +41,11 @@ def get_hotspots(
     start = timed()
     limit = max(1, min(limit, 100))
 
+    # ADV-LOW-3: Validate sort_by against known values.
+    _VALID_SORT_BY = {"risk", "complexity", "cognitive"}
+    if sort_by not in _VALID_SORT_BY:
+        return {"error": f"Invalid sort_by: {sort_by!r}. Must be one of: {', '.join(sorted(_VALID_SORT_BY))}"}
+
     if path:
         if "\x00" in path:
             return {"error": "path contains null bytes"}

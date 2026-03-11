@@ -32,7 +32,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies (frozen)
-        run: uv sync --frozen --extra test
+        run: uv sync --frozen --verify-hashes --extra test
 
       - name: Run tests
         uses: nick-fields/retry@7152eba30c6575329ac0576536151aca5a72780e  # v3

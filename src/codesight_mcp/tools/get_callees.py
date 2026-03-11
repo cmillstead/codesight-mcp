@@ -8,6 +8,9 @@ from ._common import prepare_graph_query, timed, elapsed_ms
 from .registry import ToolSpec, register
 
 
+_MAX_RESULTS = 500
+
+
 def get_callees(
     repo: str,
     symbol_id: str,
@@ -40,6 +43,7 @@ def get_callees(
     callees: list[dict] = []
     queue: deque[tuple[str, int]] = deque()
     queue.append((symbol_id, 1))
+    truncated = False
 
     while queue:
         current_id, depth = queue.popleft()
@@ -50,6 +54,10 @@ def get_callees(
             if callee_id in visited:
                 continue
             visited.add(callee_id)
+            # ADV-MED-7: Cap results to prevent unbounded output.
+            if len(callees) >= _MAX_RESULTS:
+                truncated = True
+                break
             sym = graph.get_symbol(callee_id) or {}
             callees.append({
                 "id": wrap_untrusted_content(callee_id),
@@ -61,6 +69,8 @@ def get_callees(
             })
             if depth < max_depth:
                 queue.append((callee_id, depth + 1))
+        if truncated:
+            break
 
     ms = elapsed_ms(start)
 
@@ -73,6 +83,7 @@ def get_callees(
         "max_depth": max_depth,
         "callee_count": len(callees),
         "callees": callees,
+        "truncated": truncated,
         "_meta": {
             **make_meta(source="code_index", trusted=False),
             "timing_ms": ms,

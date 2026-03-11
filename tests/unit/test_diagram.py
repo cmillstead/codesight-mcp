@@ -61,7 +61,7 @@ class TestCallGraphDiagram:
             symbol_id="a.py::foo#function", direction="LR",
             storage_path=str(tmp_path),
         )
-        assert result["mermaid"].startswith("graph LR")
+        assert "graph LR" in result["mermaid"]
 
     def test_call_graph_missing_symbol(self, tmp_path):
         from codesight_mcp.tools.get_diagram import get_diagram

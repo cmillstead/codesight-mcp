@@ -8,6 +8,9 @@ from ._common import prepare_graph_query, timed, elapsed_ms
 from .registry import ToolSpec, register
 
 
+_MAX_RESULTS = 500
+
+
 def get_callers(
     repo: str,
     symbol_id: str,
@@ -40,6 +43,7 @@ def get_callers(
     callers: list[dict] = []
     queue: deque[tuple[str, int]] = deque()
     queue.append((symbol_id, 1))
+    truncated = False
 
     while queue:
         current_id, depth = queue.popleft()
@@ -50,6 +54,10 @@ def get_callers(
             if caller_id in visited or caller_id == symbol_id:
                 continue
             visited.add(caller_id)
+            # ADV-MED-7: Cap results to prevent unbounded output.
+            if len(callers) >= _MAX_RESULTS:
+                truncated = True
+                break
             sym = graph.get_symbol(caller_id) or {}
             callers.append({
                 "id": wrap_untrusted_content(caller_id),
@@ -61,6 +69,8 @@ def get_callers(
             })
             if depth < max_depth:
                 queue.append((caller_id, depth + 1))
+        if truncated:
+            break
 
     ms = elapsed_ms(start)
 
@@ -73,6 +83,7 @@ def get_callers(
         "max_depth": max_depth,
         "caller_count": len(callers),
         "callers": callers,
+        "truncated": truncated,
         "_meta": {
             **make_meta(source="code_index", trusted=False),
             "timing_ms": ms,
