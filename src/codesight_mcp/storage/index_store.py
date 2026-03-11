@@ -13,7 +13,7 @@ import stat as stat_module
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -338,7 +338,7 @@ class IndexStore:
                 repo=f"{owner}/{name}",
                 owner=owner,
                 name=name,
-                indexed_at=datetime.now().isoformat(),
+                indexed_at=datetime.now(timezone.utc).isoformat(),
                 source_files=source_files,
                 languages=languages,
                 symbols=[self._symbol_to_dict(s) for s in symbols],
@@ -715,7 +715,7 @@ class IndexStore:
                 repo=f"{owner}/{name}",
                 owner=owner,
                 name=name,
-                indexed_at=datetime.now().isoformat(),
+                indexed_at=datetime.now(timezone.utc).isoformat(),
                 source_files=sorted(old_files),
                 languages=languages,
                 symbols=all_symbols_dicts,

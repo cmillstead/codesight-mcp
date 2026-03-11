@@ -5,7 +5,7 @@ share a single implementation.
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterable
 
 from ..core.limits import MAX_FILE_COUNT
@@ -93,7 +93,7 @@ def finalize_index(
     all_symbols = summarize_symbols(all_symbols, use_ai=use_ai_summaries)
 
     # Generate indexed_at timestamp before saving to avoid re-loading the index
-    indexed_at = datetime.utcnow().isoformat()
+    indexed_at = datetime.now(timezone.utc).isoformat()
 
     # Save index
     store = IndexStore(base_path=storage_path)
