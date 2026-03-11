@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import shutil
+import stat as stat_module
 import threading
 import time
 from dataclasses import dataclass, field
@@ -112,14 +113,17 @@ def _safe_rmtree(root: Path) -> None:
         dp = Path(dirpath)
         for fn in filenames:
             fp = dp / fn
-            if fp.is_symlink():
-                fp.unlink()  # Remove the symlink itself, don't follow
-            else:
-                fp.unlink()
+            # unlink() works for both regular files and symlinks — no TOCTOU
+            fp.unlink()
         for dn in dirnames:
             dd = dp / dn
-            if dd.is_symlink():
-                dd.unlink()  # Remove symlink, don't recurse into target
+            # Use lstat to check without following, then act
+            try:
+                st = dd.lstat()
+            except OSError:
+                continue
+            if stat_module.S_ISLNK(st.st_mode):
+                dd.unlink()  # remove the symlink itself
             else:
                 dd.rmdir()
     root.rmdir()
