@@ -101,7 +101,11 @@ _MAX_NODE_DEPTH = 50
 
 
 def _node_to_dict(node: SymbolNode, _depth: int = 0) -> dict:
-    """Convert SymbolNode to output dict."""
+    """Convert SymbolNode to output dict.
+
+    ADV-MED-6: Caps recursion at _MAX_NODE_DEPTH to prevent stack overflow
+    on adversarially deep symbol trees.
+    """
     result = {
         "id": wrap_untrusted_content(node.symbol.id),
         "kind": node.symbol.kind,

@@ -165,8 +165,8 @@ def get_dead_code(
     return {
         "repo": f"{owner}/{name}",
         "dead_count": len(dead),
-        "truncated": truncated,
         "symbols": dead,
+        "truncated": truncated,
         "_meta": {
             **make_meta(source="code_index", trusted=False),
             "timing_ms": ms,

@@ -81,8 +81,8 @@ def get_callees(
         "symbol_name": wrap_untrusted_content(target_name),
         "max_depth": max_depth,
         "callee_count": len(callees),
-        "truncated": truncated,
         "callees": callees,
+        "truncated": truncated,
         "_meta": {
             **make_meta(source="code_index", trusted=False),
             "timing_ms": ms,

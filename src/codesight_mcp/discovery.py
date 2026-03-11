@@ -20,7 +20,7 @@ import pathspec
 
 from .security import is_secret_file, is_binary_file, is_binary_content
 from .core.limits import MAX_FILE_SIZE, MAX_FILE_COUNT, MAX_DIRECTORY_DEPTH, GITHUB_API_TIMEOUT
-from .core.validation import is_within
+from .core.validation import is_within, assert_no_control_chars, assert_safe_segments, ValidationError
 from .parser.languages import LANGUAGE_EXTENSIONS
 
 
@@ -526,6 +526,14 @@ def discover_source_files(
             continue
 
         path = entry.get("path", "")
+
+        # ADV-MED-9: Validate GitHub tree paths for control chars and traversal.
+        try:
+            assert_no_control_chars(path)
+            assert_safe_segments(path)
+        except ValidationError:
+            continue
+
         try:
             size = int(entry.get("size", 0))
         except (TypeError, ValueError):

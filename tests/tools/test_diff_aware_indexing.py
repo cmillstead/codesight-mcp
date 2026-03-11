@@ -74,7 +74,7 @@ class TestGitChangedFiles:
         ls_result.stdout = "src/c.py\n"
 
         with patch("codesight_mcp.tools.index_folder.subprocess.run", side_effect=[diff_result, ls_result]):
-            changed = _git_changed_files(tmp_path, "abc123")
+            changed = _git_changed_files(tmp_path, "a" * 40)
             assert changed == {"src/a.py", "src/b.py", "src/c.py"}
 
     def test_returns_none_on_diff_failure(self, tmp_path):
@@ -98,7 +98,7 @@ class TestGitChangedFiles:
         ls_result.stdout = ""
 
         with patch("codesight_mcp.tools.index_folder.subprocess.run", side_effect=[diff_result, ls_result]):
-            changed = _git_changed_files(tmp_path, "abc123")
+            changed = _git_changed_files(tmp_path, "a" * 40)
             assert changed == set()
 
 
@@ -169,9 +169,9 @@ class TestDiffAwareIndexing:
         other_file.write_text("def other():\n    return 'other'\n")
         storage = tmp_path / "_storage"
 
-        # First index: commit abc123
+        # First index: commit (valid 40-char hex hash)
         git_check = MagicMock(returncode=0, stdout="true\n")
-        head_result_1 = MagicMock(returncode=0, stdout="abc123\n")
+        head_result_1 = MagicMock(returncode=0, stdout="a" * 40 + "\n")
 
         def mock_run_first(cmd, **kwargs):
             if "rev-parse" in cmd and "--is-inside-work-tree" in cmd:
@@ -193,8 +193,8 @@ class TestDiffAwareIndexing:
         # Modify one file
         py_file.write_text("def hello():\n    return 'hello world'\n")
 
-        # Second index: commit def456, only main.py changed
-        head_result_2 = MagicMock(returncode=0, stdout="def456\n")
+        # Second index: commit (valid 40-char hex hash), only main.py changed
+        head_result_2 = MagicMock(returncode=0, stdout="b" * 40 + "\n")
         diff_result = MagicMock(returncode=0, stdout="main.py\n")
         ls_result = MagicMock(returncode=0, stdout="")
 
@@ -227,7 +227,7 @@ class TestDiffAwareIndexing:
         store = IndexStore(base_path=str(storage))
         owner, name = result2["repo"].split("/", 1)
         idx = store.load_index(owner, name)
-        assert idx.git_head == "def456"
+        assert idx.git_head == "b" * 40
         # Both files should still be in the index
         assert len(idx.source_files) == 2
 

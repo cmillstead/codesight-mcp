@@ -3,7 +3,7 @@
 from collections import deque
 from typing import Optional
 
-from ..core.boundaries import make_meta
+from ..core.boundaries import make_meta, wrap_untrusted_content
 from ..parser.graph import CodeGraph
 from ._common import RepoContext, prepare_graph_query, timed, elapsed_ms
 from .registry import ToolSpec, register
@@ -14,8 +14,14 @@ _VALID_TYPES = {"call_graph", "type_hierarchy", "imports", "impact"}
 
 
 def _escape(label: str) -> str:
-    """Escape a label for Mermaid syntax."""
+    """Escape a label for Mermaid syntax.
+
+    ADV-MED-1: Also replace newlines/carriage returns to prevent Mermaid
+    syntax injection via multi-line labels.
+    """
     return (label
+            .replace('\n', ' ')
+            .replace('\r', ' ')
             .replace('"', '#quot;')
             .replace('<', '&lt;')
             .replace('>', '&gt;')
@@ -280,7 +286,7 @@ def _build_mermaid(
     mermaid = "\n".join(lines)
 
     return {
-        "mermaid": mermaid,
+        "mermaid": wrap_untrusted_content(mermaid),
         "node_count": len(nodes),
         "edge_count": len(seen_edges),
     }

@@ -197,9 +197,9 @@ class TestNonceSplitMarker:
             content_hash="", calls=[], imports=[], inherits_from=[], implements=[],
         )
         summarizer = BatchSummarizer.__new__(BatchSummarizer)
-        prompt = summarizer._build_prompt([sym], nonce="abc123")
+        prompt, _sub_nonces = summarizer._build_prompt([sym], nonce="abc123")
 
-        system, user = BatchSummarizer._split_prompt(prompt)
+        system, user = BatchSummarizer._split_prompt(prompt, nonce="abc123")
         # System should still contain instructions
         assert "UNTRUSTED" in system
         # The attacker's <<<SPLIT>>> should be in user part, not cause a split
@@ -210,7 +210,7 @@ class TestNonceSplitMarker:
         from codesight_mcp.summarizer.batch_summarize import BatchSummarizer
 
         prompt = "system instructions\n<<<SPLIT_deadbeef>>>\nuser data"
-        system, user = BatchSummarizer._split_prompt(prompt)
+        system, user = BatchSummarizer._split_prompt(prompt, nonce="deadbeef")
         assert system == "system instructions"
         assert user == "user data"
 

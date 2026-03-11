@@ -94,15 +94,13 @@ class TestAtomicWriteNofollow:
         assert tmp_files == []
 
     def test_symlink_target_rejected(self, tmp_path):
+        import os, threading
         real = tmp_path / "real.txt"
         real.write_text("original")
         link = tmp_path / "link.txt"
         link.symlink_to(real)
         # The temp file uses PID/thread in the name: link.txt.tmp.<pid>.<tid>
         # We must create the symlink at the exact path atomic_write_nofollow will use.
-        import os
-        import threading
-
         tmp_name = f"link.txt.tmp.{os.getpid()}.{threading.get_ident()}"
         tmp_file = tmp_path / tmp_name
         tmp_file.symlink_to(real)

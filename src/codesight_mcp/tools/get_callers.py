@@ -43,6 +43,7 @@ def get_callers(
     callers: list[dict] = []
     queue: deque[tuple[str, int]] = deque()
     queue.append((symbol_id, 1))
+    truncated = False
 
     while queue:
         if len(callers) >= _MAX_RESULTS:
@@ -57,6 +58,10 @@ def get_callers(
             if caller_id in visited or caller_id == symbol_id:
                 continue
             visited.add(caller_id)
+            # ADV-MED-7: Cap results to prevent unbounded output.
+            if len(callers) >= _MAX_RESULTS:
+                truncated = True
+                break
             sym = graph.get_symbol(caller_id) or {}
             callers.append({
                 "id": wrap_untrusted_content(caller_id),
@@ -68,6 +73,8 @@ def get_callers(
             })
             if depth < max_depth:
                 queue.append((caller_id, depth + 1))
+        if truncated:
+            break
 
     truncated = len(callers) >= _MAX_RESULTS
 
@@ -83,6 +90,7 @@ def get_callers(
         "caller_count": len(callers),
         "truncated": truncated,
         "callers": callers,
+        "truncated": truncated,
         "_meta": {
             **make_meta(source="code_index", trusted=False),
             "timing_ms": ms,
