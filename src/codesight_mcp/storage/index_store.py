@@ -788,6 +788,8 @@ class IndexStore:
 
             return updated
 
+    _MAX_REPOS: int = 500
+
     def list_repos(self) -> list[dict]:
         """List all indexed repositories (supports both .json.gz and .json)."""
         repos = []
@@ -795,6 +797,8 @@ class IndexStore:
 
         for pattern in ("*.json.gz", "*.json"):
             for index_file in self.base_path.glob(pattern):
+                if len(repos) >= self._MAX_REPOS:
+                    break
                 # Skip .tmp files and lock files
                 if index_file.name.endswith(".tmp") or index_file.name.endswith(".lock"):
                     continue
