@@ -209,3 +209,53 @@ class TestPageRank:
         ranks_85 = g.pagerank(damping=0.85)
         ranks_50 = g.pagerank(damping=0.50)
         assert ranks_85 != ranks_50
+
+
+class TestFingerprint:
+    """Test _symbol_fingerprint includes relationship edges."""
+
+    def test_fingerprint_changes_when_calls_change(self):
+        from codesight_mcp.parser.graph import _symbol_fingerprint
+        syms_v1 = [
+            {"id": "a", "file": "f.py", "name": "a", "calls": ["b"],
+             "imports": [], "inherits_from": [], "implements": []},
+            {"id": "b", "file": "f.py", "name": "b", "calls": [],
+             "imports": [], "inherits_from": [], "implements": []},
+        ]
+        syms_v2 = [
+            {"id": "a", "file": "f.py", "name": "a", "calls": ["c"],
+             "imports": [], "inherits_from": [], "implements": []},
+            {"id": "b", "file": "f.py", "name": "b", "calls": [],
+             "imports": [], "inherits_from": [], "implements": []},
+        ]
+        fp1 = _symbol_fingerprint(syms_v1)
+        fp2 = _symbol_fingerprint(syms_v2)
+        assert fp1 != fp2, "Fingerprint should change when call lists differ"
+
+    def test_fingerprint_changes_when_inherits_change(self):
+        from codesight_mcp.parser.graph import _symbol_fingerprint
+        syms_v1 = [
+            {"id": "a", "file": "f.py", "name": "a", "calls": [],
+             "imports": [], "inherits_from": ["Base"], "implements": []},
+        ]
+        syms_v2 = [
+            {"id": "a", "file": "f.py", "name": "a", "calls": [],
+             "imports": [], "inherits_from": ["OtherBase"], "implements": []},
+        ]
+        fp1 = _symbol_fingerprint(syms_v1)
+        fp2 = _symbol_fingerprint(syms_v2)
+        assert fp1 != fp2, "Fingerprint should change when inherits_from differs"
+
+    def test_fingerprint_changes_when_imports_change(self):
+        from codesight_mcp.parser.graph import _symbol_fingerprint
+        syms_v1 = [
+            {"id": "a", "file": "f.py", "name": "a", "calls": [],
+             "imports": ["os"], "inherits_from": [], "implements": []},
+        ]
+        syms_v2 = [
+            {"id": "a", "file": "f.py", "name": "a", "calls": [],
+             "imports": ["sys"], "inherits_from": [], "implements": []},
+        ]
+        fp1 = _symbol_fingerprint(syms_v1)
+        fp2 = _symbol_fingerprint(syms_v2)
+        assert fp1 != fp2, "Fingerprint should change when imports differ"

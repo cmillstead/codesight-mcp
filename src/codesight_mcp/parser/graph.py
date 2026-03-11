@@ -11,13 +11,24 @@ _MAX_DEPTH_LIMIT: int = 50
 
 
 def _symbol_fingerprint(symbols: list[dict]) -> str:
-    """Compute a collision-resistant fingerprint from symbol IDs for cache keying.
+    """Compute a collision-resistant fingerprint from symbol data for cache keying.
 
     ADV-LOW-4: Uses SHA-256 instead of Python's hash() to avoid collisions
     that could return stale cached graphs.
+
+    Includes symbol IDs, call lists, inherits_from, imports, and implements
+    so that changes to function bodies (adding/removing calls) invalidate
+    the cached graph.
     """
-    ids = sorted(sym.get("id", "") for sym in symbols)
-    return hashlib.sha256("\n".join(ids).encode()).hexdigest()
+    parts = []
+    for sym in sorted(symbols, key=lambda s: s.get("id", "")):
+        sid = sym.get("id", "")
+        calls = ",".join(sorted(sym.get("calls", [])))
+        inherits = ",".join(sorted(sym.get("inherits_from", [])))
+        imports = ",".join(sorted(sym.get("imports", [])))
+        implements = ",".join(sorted(sym.get("implements", [])))
+        parts.append(f"{sid}|{calls}|{inherits}|{imports}|{implements}")
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()
 
 
 def _clamp_depth(depth: int) -> int:
