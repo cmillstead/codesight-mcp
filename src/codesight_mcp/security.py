@@ -80,7 +80,12 @@ def validate_file_access(path: str, root: str) -> str:
 
 
 def safe_read_file(abs_path: str, root: str) -> str:
-    """Read a file after validation. Uses errors='replace' for encoding safety."""
+    """Read a file after validation. Uses errors='replace' for encoding safety.
+
+    Note: validate_path() is called with abs_path (an absolute path) and root.
+    When abs_path is absolute, os.path.join(root, abs_path) returns abs_path
+    unchanged — this is intentional POSIX behavior and the expected code path.
+    """
     validate_path(abs_path, root)
 
     try:
