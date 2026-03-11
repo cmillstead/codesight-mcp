@@ -53,6 +53,8 @@ SECRET_PATTERNS = [
     "*.p8", "*.asc",
 ]
 
+assert all(p == p.lower() for p in SECRET_PATTERNS), "SECRET_PATTERNS must be lowercase"
+
 # --- Binary extensions (ported from jcodemunch) ---
 
 BINARY_EXTENSIONS = {
