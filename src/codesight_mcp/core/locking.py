@@ -35,14 +35,24 @@ def ensure_private_dir(path: str | Path) -> Path:
             os.umask(old_umask)
     if not target.is_dir():
         raise OSError("Path is not a directory")
-    os.chmod(target, 0o700)
+    # TOCTOU-safe permission enforcement via fd (matches _makedirs_0o700 pattern)
+    try:
+        _fd = os.open(str(target), os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY)
+    except OSError:
+        raise OSError(f"refusing to chmod symlink or inaccessible directory: {target}")
+    try:
+        os.fchmod(_fd, 0o700)
+    finally:
+        os.close(_fd)
     return target
 
 
 def atomic_write_nofollow(path: str | Path, data: str) -> None:
     """Atomically write text data without following symlinks at the temp path."""
     target = Path(path)
-    tmp_path = target.with_suffix(target.suffix + ".tmp")
+    tmp_path = target.with_name(
+        f"{target.name}.tmp.{os.getpid()}.{threading.get_ident()}"
+    )
     fd = os.open(
         str(tmp_path),
         os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
