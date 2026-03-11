@@ -25,7 +25,8 @@ def _escape(label: str) -> str:
             .replace('[', '#91;')
             .replace(']', '#93;')
             .replace('{', '#123;')
-            .replace('}', '#125;'))
+            .replace('}', '#125;')
+            .replace(';', '#59;'))
 
 
 def _node_id(index: int) -> str:

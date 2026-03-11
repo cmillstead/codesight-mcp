@@ -231,3 +231,13 @@ class TestDiagramEdgeCases:
             storage_path=str(tmp_path),
         )
         assert "error" in result
+
+    def test_escape_handles_semicolons(self):
+        """Task 26: Semicolons must be escaped to prevent Mermaid statement injection."""
+        from codesight_mcp.tools.get_diagram import _escape
+        result = _escape("foo; end; bar")
+        # Raw semicolons should be replaced with #59; escape sequences
+        assert "#59;" in result
+        # Verify no unescaped semicolons remain (strip out the escape sequences first)
+        stripped = result.replace("#59;", "")
+        assert ";" not in stripped
