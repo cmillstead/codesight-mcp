@@ -230,8 +230,9 @@ class BatchSummarizer:
                 else:
                     sym.summary = signature_fallback(sym)
 
-        except Exception:
+        except Exception as exc:
             # On any error, fall back to signature
+            logger.warning("AI summarization failed, falling back to signatures: %s", exc)
             for sym in batch:
                 if not sym.summary:
                     sym.summary = signature_fallback(sym)
