@@ -250,11 +250,15 @@ class CodeIndex:
 class IndexStore:
     """Storage for code indexes with byte-offset content retrieval."""
 
-    def __init__(self, base_path: Optional[str] = None):
+    def __init__(self, base_path: Optional[str] = None, *, read_only: bool = False):
         """Initialize store.
 
         Args:
             base_path: Base directory for storage. Defaults to ~/.code-index/
+            read_only: If True, skip directory creation and permission
+                enforcement.  Useful for CLI queries that only read the
+                existing index and must work inside sandboxed environments
+                where fchmod is forbidden.
         """
         if base_path is not None and not str(base_path).strip():
             raise ValueError("base_path must not be empty or whitespace")
@@ -262,6 +266,11 @@ class IndexStore:
             self.base_path = Path(base_path)
         else:
             self.base_path = Path.home() / ".code-index"
+
+        # CODESIGHT_READ_ONLY env var allows CLI queries to skip fchmod/mkdir
+        # in sandboxed environments where filesystem permission ops are blocked.
+        if read_only or os.environ.get("CODESIGHT_READ_ONLY", "").lower() in ("1", "true", "yes"):
+            return
 
         # SEC-LOW-4: use _makedirs_0o700 to avoid TOCTOU between mkdir and chmod
         _makedirs_0o700(str(self.base_path))

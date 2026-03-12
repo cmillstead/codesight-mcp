@@ -307,13 +307,136 @@ async def run_server():
         )
 
 
+def _parse_cli_args(argv: list[str], schema: dict) -> dict:
+    """Parse --key value pairs from argv into a dict, guided by input_schema."""
+    properties = schema.get("properties", {})
+    arguments: dict = {}
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg.startswith("--"):
+            key = arg[2:].replace("-", "_")
+            if key in properties:
+                prop = properties[key]
+                prop_type = prop.get("type", "string")
+                if prop_type == "boolean":
+                    # Boolean flags: --flag (true) or --flag true/false
+                    if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
+                        arguments[key] = argv[i + 1].lower() in ("true", "1", "yes")
+                        i += 2
+                    else:
+                        arguments[key] = True
+                        i += 1
+                elif prop_type == "integer":
+                    if i + 1 < len(argv):
+                        arguments[key] = int(argv[i + 1])
+                        i += 2
+                    else:
+                        i += 1
+                elif prop_type == "array":
+                    # Collect comma-separated values
+                    if i + 1 < len(argv):
+                        arguments[key] = argv[i + 1].split(",")
+                        i += 2
+                    else:
+                        i += 1
+                else:
+                    # String (default)
+                    if i + 1 < len(argv):
+                        arguments[key] = argv[i + 1]
+                        i += 2
+                    else:
+                        i += 1
+            else:
+                # Unknown flag — skip value if present
+                i += 2 if (i + 1 < len(argv) and not argv[i + 1].startswith("--")) else i + 1
+        else:
+            i += 1
+    return arguments
+
+
+def _run_cli_tool(tool_name: str, argv: list[str]) -> None:
+    """Dispatch a tool by name with CLI arguments. Prints JSON result."""
+    import sys
+
+    specs = get_all_specs()
+    if tool_name not in specs:
+        print(json.dumps({"error": f"Unknown tool: {tool_name}"}))
+        sys.exit(1)
+
+    spec = specs[tool_name]
+
+    # Non-destructive CLI queries run in read-only mode so IndexStore skips
+    # fchmod/mkdir — this allows the CLI to work inside sandboxed environments.
+    if not spec.destructive:
+        os.environ["CODESIGHT_READ_ONLY"] = "1"
+
+    # Handle --help
+    if "--help" in argv or "-h" in argv:
+        props = spec.input_schema.get("properties", {})
+        required = spec.input_schema.get("required", [])
+        lines = [f"Usage: codesight-mcp {tool_name.replace('_', '-')} [OPTIONS]", ""]
+        lines.append(spec.description)
+        lines.append("")
+        lines.append("Options:")
+        for pname, pdef in props.items():
+            flag = f"  --{pname.replace('_', '-')}"
+            ptype = pdef.get("type", "string")
+            desc = pdef.get("description", "")
+            req = " (required)" if pname in required else ""
+            enum_vals = pdef.get("enum")
+            if enum_vals:
+                desc += f" [{', '.join(str(v) for v in enum_vals)}]"
+            lines.append(f"{flag} <{ptype}>{req}")
+            if desc:
+                lines.append(f"      {desc}")
+        print("\n".join(lines))
+        sys.exit(0)
+
+    arguments = _parse_cli_args(argv, spec.input_schema)
+
+    # Sanitize
+    sanitized = _sanitize_arguments(tool_name, arguments)
+    if isinstance(sanitized, str):
+        print(json.dumps({"error": sanitized}))
+        sys.exit(1)
+    arguments = sanitized
+
+    # Check required args
+    if spec.required_args:
+        missing = [arg for arg in spec.required_args if arg not in arguments]
+        if missing:
+            print(json.dumps({"error": f"Missing required argument(s): {', '.join(missing)}"}))
+            sys.exit(1)
+
+    try:
+        storage_path = _validate_storage_path(_CODE_INDEX_PATH or None)
+    except Exception as e:
+        print(json.dumps({"error": sanitize_error(e)}))
+        sys.exit(1)
+
+    try:
+        result = spec.handler(arguments, storage_path)
+        if asyncio.iscoroutine(result):
+            result = asyncio.run(result)
+        print(json.dumps(result, indent=2))
+        sys.exit(0 if not isinstance(result, dict) or "error" not in result else 1)
+    except Exception as e:
+        print(json.dumps({"error": sanitize_error(e)}))
+        sys.exit(1)
+
+
 def main():
     """Main entry point.
 
-    Supports optional subcommands for use in git hooks::
+    Supports optional subcommands::
 
         codesight-mcp index [path] [--no-ai]       # index a local folder
         codesight-mcp index-repo <url> [--no-ai]   # index a GitHub repo
+        codesight-mcp <tool-name> [--arg value]     # run any tool via CLI
+        codesight-mcp tools                         # list available tools
+
+    Tool names use hyphens (e.g. search-symbols) or underscores (search_symbols).
 
     If ``CODESIGHT_ALLOWED_ROOTS`` is not set, ``index`` defaults the allowed
     root to the target path itself so the CLI is usable outside an MCP session.
@@ -333,7 +456,26 @@ def main():
     from .tools.index_folder import index_folder as _index_folder
     from .tools.index_repo import index_repo as _index_repo
 
-    if len(sys.argv) >= 2 and sys.argv[1] == "index":
+    if len(sys.argv) < 2:
+        asyncio.run(run_server())
+        return
+
+    subcmd = sys.argv[1]
+
+    # List available tools
+    if subcmd == "tools":
+        specs = get_all_specs()
+        tools_list = []
+        for name, spec in sorted(specs.items()):
+            tools_list.append({
+                "name": name,
+                "cli_name": name.replace("_", "-"),
+                "description": spec.description[:120],
+            })
+        print(json.dumps(tools_list, indent=2))
+        sys.exit(0)
+
+    if subcmd == "index":
         args = sys.argv[2:]
         use_ai = "--no-ai" not in args
         path_args = [a for a in args if not a.startswith("--")]
@@ -347,7 +489,7 @@ def main():
         print(json.dumps(result, indent=2))
         sys.exit(0 if result.get("success") else 1)
 
-    elif len(sys.argv) >= 2 and sys.argv[1] == "index-repo":
+    elif subcmd == "index-repo":
         args = sys.argv[2:]
         use_ai = "--no-ai" not in args
         url_args = [a for a in args if not a.startswith("--")]
@@ -361,7 +503,14 @@ def main():
         sys.exit(0 if result.get("success") else 1)
 
     else:
-        asyncio.run(run_server())
+        # Generic tool dispatch: normalize hyphens to underscores
+        tool_name = subcmd.replace("-", "_")
+        specs = get_all_specs()
+        if tool_name in specs:
+            _run_cli_tool(tool_name, sys.argv[2:])
+        else:
+            # Not a known tool — fall back to MCP server mode
+            asyncio.run(run_server())
 
 
 if __name__ == "__main__":
