@@ -61,16 +61,16 @@ codesight-mcp/
 │       ├── get_key_symbols.py  # PageRank-based structural importance ranking
 │       ├── get_diagram.py      # Mermaid diagram generation (call_graph, hierarchy, imports, impact)
 │       └── get_dead_code.py    # Unused symbol detection (zero callers)
-├── tests/                      # Test suite (51 files, 1,073 tests)
+├── tests/                      # Test suite (80 files, 1,558 tests)
 │   ├── conftest.py             # Shared fixtures (tmp_index_store, python_index)
-│   ├── core/                   # Core infrastructure tests (79 tests)
+│   ├── core/                   # Core infrastructure tests (85 tests)
 │   │   ├── test_core_boundaries.py
 │   │   ├── test_core_errors.py
 │   │   ├── test_core_limits.py
 │   │   ├── test_core_locking.py
 │   │   ├── test_core_rate_limiting.py
 │   │   └── test_core_validation.py
-│   ├── unit/                   # Parser & analysis unit tests (276 tests)
+│   ├── unit/                   # Parser & analysis unit tests (353 tests)
 │   │   ├── test_parser.py
 │   │   ├── test_languages.py
 │   │   ├── test_new_languages.py
@@ -82,7 +82,7 @@ codesight-mcp/
 │   │   ├── test_key_symbols.py
 │   │   ├── test_diagram.py
 │   │   └── test_summarizer.py
-│   ├── tools/                  # Tool function tests (201 tests)
+│   ├── tools/                  # Tool function tests (345 tests)
 │   │   ├── test_tools_index_repo.py
 │   │   ├── test_tools_index_folder.py
 │   │   ├── test_tools_invalidate_cache.py
@@ -99,7 +99,7 @@ codesight-mcp/
 │   │   ├── test_tools_get_dead_code.py
 │   │   ├── test_cross_repo_search.py
 │   │   └── test_diff_aware_indexing.py
-│   ├── security/               # Adversarial & security tests (417 tests)
+│   ├── security/               # Adversarial & security tests (563 tests)
 │   │   ├── test_adversarial.py
 │   │   ├── test_adversarial_chaos.py
 │   │   ├── test_adversarial_discovery.py
@@ -113,12 +113,12 @@ codesight-mcp/
 │   │   ├── test_no_redact.py
 │   │   ├── test_security_facade.py
 │   │   └── test_storage_hardening.py
-│   ├── server/                 # Server & registry tests (76 tests)
+│   ├── server/                 # Server & registry tests (73 tests)
 │   │   ├── test_server.py
 │   │   └── test_registry.py
-│   ├── storage/                # Storage persistence tests (15 tests)
+│   ├── storage/                # Storage persistence tests (44 tests)
 │   │   └── test_storage.py
-│   └── integration/            # End-to-end pipeline tests (9 tests)
+│   └── integration/            # End-to-end pipeline tests (56 tests)
 │       └── test_integration.py
 └── .github/
     └── workflows/
@@ -133,8 +133,8 @@ codesight-mcp/
 | `src/codesight_mcp/parser/` | AST parsing engine | 15-language support via declarative LanguageSpec pattern |
 | `src/codesight_mcp/storage/` | Index persistence | Gzip compression, atomic writes, incremental updates |
 | `src/codesight_mcp/summarizer/` | Symbol documentation | 3-tier: docstring → AI → signature fallback |
-| `src/codesight_mcp/tools/` | MCP tool implementations | 22 tools with declarative ToolSpec registry |
-| `tests/security/` | Adversarial testing | 417 tests (39% of suite), real filesystem, no mocking |
+| `src/codesight_mcp/tools/` | MCP tool implementations | 27 tools with declarative ToolSpec registry |
+| `tests/security/` | Adversarial testing | 563 tests (36% of suite), real filesystem, no mocking |
 
 ## Entry Points
 

@@ -13,9 +13,9 @@
 
 - **Tech Stack:** Python 3.10+, MCP SDK, tree-sitter (15 languages), httpx, Anthropic SDK
 - **Entry Point:** `codesight_mcp.server:main`
-- **Architecture Pattern:** Layered library — thin server dispatcher + 22 tool modules
-- **Tools:** 22 MCP tools (indexing, navigation, search, code graph, analysis)
-- **Tests:** 1,073 tests (39% security/adversarial)
+- **Architecture Pattern:** Layered library — thin server dispatcher + 27 tool modules
+- **Tools:** 27 MCP tools (indexing, navigation, search, code graph, analysis)
+- **Tests:** 1,558 tests (36% security/adversarial)
 - **Build:** hatchling + uv lockfile
 
 ## Generated Documentation

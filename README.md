@@ -51,7 +51,7 @@ Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gra
 - **6-step path validation chain** — null bytes, traversal, limits, resolution, containment, symlinks
 - **Content boundary markers** — indirect prompt injection defense (Microsoft spotlighting research)
 - **Error sanitization** — raw exceptions never reach the AI; system paths are always stripped
-- **1,538 tests** — adversarial, security, integration, benchmark, fuzz, and stress coverage with real temp directories
+- **1,558 tests** — adversarial, security, integration, benchmark, fuzz, and stress coverage with real temp directories
 
 ---
 
