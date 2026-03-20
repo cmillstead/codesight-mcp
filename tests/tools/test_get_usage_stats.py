@@ -1,5 +1,7 @@
 """Tests for get_usage_stats tool."""
 
+import json
+
 from codesight_mcp.core.usage_logging import UsageLogger, UsageRecord
 from codesight_mcp.tools.get_usage_stats import get_usage_stats
 
@@ -74,3 +76,69 @@ class TestGetUsageStats:
         # "b" was called — it should NOT be in uncalled even though we filtered to "a"
         assert "b" not in result["uncalled_tools"]
         assert result["uncalled_tools"] == ["c"]
+
+    def test_session_filter_current_default(self):
+        """Default session filter returns only current session records and includes session_id."""
+        logger = UsageLogger(max_memory=1000, log_path=None)
+        rec = UsageRecord(tool_name="a", timestamp=1.0, success=True, error_message=None, response_time_ms=100)
+        logger.record(rec)
+        result = get_usage_stats(logger=logger, all_tool_names=["a", "b"])
+        assert result["total_calls"] == 1
+        assert "session_id" in result
+        assert result["session_id"] == logger._session_id
+
+    def test_session_filter_all(self, tmp_path):
+        """session='all' returns records from all sessions."""
+        log_file = tmp_path / "usage.jsonl"
+        # Write an old session record directly to the file
+        old_record = {
+            "tool_name": "a",
+            "timestamp": 1.0,
+            "success": True,
+            "error_message": None,
+            "response_time_ms": 100,
+            "argument_keys": [],
+            "session_id": "old-session-123",
+        }
+        log_file.write_text(json.dumps(old_record) + "\n")
+
+        # Create a new logger that will read from the same file
+        logger = UsageLogger(max_memory=1000, log_path=str(log_file))
+        new_rec = UsageRecord(tool_name="b", timestamp=2.0, success=True, error_message=None, response_time_ms=50)
+        logger.record(new_rec)
+
+        result = get_usage_stats(logger=logger, all_tool_names=["a", "b"], session="all")
+        assert result["total_calls"] == 2
+        assert result["session_id"] == "all"
+
+    def test_session_filter_specific_id(self, tmp_path):
+        """Filtering by a specific session_id returns only matching records."""
+        log_file = tmp_path / "usage.jsonl"
+        target_sid = "target-session-42"
+        other_sid = "other-session-99"
+        lines = []
+        for sid, tool in [(target_sid, "a"), (target_sid, "b"), (other_sid, "c")]:
+            lines.append(json.dumps({
+                "tool_name": tool,
+                "timestamp": 1.0,
+                "success": True,
+                "error_message": None,
+                "response_time_ms": 100,
+                "argument_keys": [],
+                "session_id": sid,
+            }))
+        log_file.write_text("\n".join(lines) + "\n")
+
+        logger = UsageLogger(max_memory=1000, log_path=str(log_file))
+        result = get_usage_stats(logger=logger, all_tool_names=["a", "b", "c"], session=target_sid)
+        assert result["total_calls"] == 2
+        assert set(result["per_tool"].keys()) == {"a", "b"}
+        assert result["session_id"] == target_sid
+
+    def test_session_filter_current_returns_session_id_in_response(self):
+        """Response includes session_id matching logger._session_id when session='current'."""
+        logger = UsageLogger(max_memory=1000, log_path=None)
+        rec = UsageRecord(tool_name="x", timestamp=1.0, success=True, error_message=None, response_time_ms=10)
+        logger.record(rec)
+        result = get_usage_stats(logger=logger, all_tool_names=["x"], session="current")
+        assert result["session_id"] == logger._session_id
