@@ -397,3 +397,98 @@ class TestUsageLoggerConfig:
         os.environ["CODESIGHT_USAGE_MAX_MEMORY"] = "notanumber"
         logger = UsageLogger.from_env()
         assert logger._max_memory == 10_000
+
+
+# ---------------------------------------------------------------------------
+# TestUsageLoggerLoadHistory
+# ---------------------------------------------------------------------------
+
+class TestUsageLoggerLoadHistory:
+    def _make_record(self, tool_name: str = "test_tool", success: bool = True,
+                     response_time_ms: int = 100, timestamp: float | None = None) -> UsageRecord:
+        return UsageRecord(
+            tool_name=tool_name,
+            timestamp=timestamp or time.time(),
+            success=success,
+            error_message=None if success else "err",
+            response_time_ms=response_time_ms,
+            argument_keys=[],
+        )
+
+    def test_load_history_reads_jsonl_file(self, tmp_path):
+        log_file = tmp_path / "usage.jsonl"
+        logger = UsageLogger(log_path=str(log_file))
+        logger.record(self._make_record(tool_name="alpha"))
+        logger.record(self._make_record(tool_name="beta"))
+        history = logger.load_history()
+        assert len(history) == 2
+        assert history[0].tool_name == "alpha"
+        assert history[1].tool_name == "beta"
+
+    def test_load_history_returns_empty_when_no_file(self):
+        logger = UsageLogger(log_path=None)
+        assert logger.load_history() == []
+
+    def test_load_history_returns_empty_when_file_missing(self, tmp_path):
+        logger = UsageLogger(log_path=str(tmp_path / "nonexistent.jsonl"))
+        assert logger.load_history() == []
+
+    def test_load_history_caches_result(self, tmp_path):
+        log_file = tmp_path / "usage.jsonl"
+        logger = UsageLogger(log_path=str(log_file))
+        logger.record(self._make_record())
+        h1 = logger.load_history()
+        h2 = logger.load_history()
+        assert h1 is h2
+
+    def test_load_history_cache_invalidated_after_write(self, tmp_path):
+        log_file = tmp_path / "usage.jsonl"
+        logger = UsageLogger(log_path=str(log_file))
+        logger.record(self._make_record(tool_name="first"))
+        first_history = logger.load_history()
+        assert len(first_history) == 1
+        logger.record(self._make_record(tool_name="second"))
+        second_history = logger.load_history()
+        assert first_history is not second_history
+        assert len(second_history) == 2
+
+    def test_load_history_skips_malformed_lines(self, tmp_path):
+        log_file = tmp_path / "usage.jsonl"
+        logger = UsageLogger(log_path=str(log_file))
+        logger.record(self._make_record(tool_name="valid1"))
+        # Append a malformed line directly
+        with open(log_file, "a") as f:
+            f.write("not valid json\n")
+        # Invalidate cache
+        logger._history_cache = None
+        logger.record(self._make_record(tool_name="valid2"))
+        history = logger.load_history()
+        assert len(history) == 2
+        assert history[0].tool_name == "valid1"
+        assert history[1].tool_name == "valid2"
+
+    def test_load_history_rejects_symlink(self, tmp_path):
+        real_file = tmp_path / "real.jsonl"
+        real_file.write_text('{"tool_name":"x","timestamp":1.0,"success":true,"error_message":null,"response_time_ms":10,"argument_keys":[],"session_id":""}\n')
+        link = tmp_path / "link.jsonl"
+        link.symlink_to(real_file)
+        logger = UsageLogger(log_path=str(link))
+        assert logger.load_history() == []
+
+    def test_load_history_skips_unknown_fields_in_dict(self, tmp_path):
+        log_file = tmp_path / "usage.jsonl"
+        data = {
+            "tool_name": "my_tool",
+            "timestamp": 1.0,
+            "success": True,
+            "error_message": None,
+            "response_time_ms": 100,
+            "argument_keys": [],
+            "session_id": "",
+            "extra_field": "should be ignored",
+        }
+        log_file.write_text(json.dumps(data) + "\n")
+        logger = UsageLogger(log_path=str(log_file))
+        history = logger.load_history()
+        assert len(history) == 1
+        assert history[0].tool_name == "my_tool"

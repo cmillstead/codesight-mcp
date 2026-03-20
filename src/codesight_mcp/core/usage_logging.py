@@ -68,6 +68,7 @@ class UsageLogger:
         self._log_path = Path(log_path) if log_path else None
         self._enabled = enabled
         self._session_id = f"{os.getpid()}-{_time.time():.0f}"
+        self._history_cache: list[UsageRecord] | None = None
 
     @classmethod
     def from_env(cls) -> UsageLogger:
@@ -105,6 +106,7 @@ class UsageLogger:
         """Write a record as JSONL to the log file."""
         if self._log_path is None:
             return
+        self._history_cache = None
         path = self._log_path
         ensure_private_dir(path.parent)
         # Rotate if file exceeds size limit
@@ -163,3 +165,40 @@ class UsageLogger:
             )
 
         return stats
+
+    def load_history(self) -> list[UsageRecord]:
+        """Read all records from the JSONL log file.
+
+        Uses O_NOFOLLOW for symlink safety. Caches until next write.
+        """
+        if self._history_cache is not None:
+            return self._history_cache
+        if self._log_path is None or not self._log_path.exists():
+            self._history_cache = []
+            return self._history_cache
+        try:
+            fd = os.open(str(self._log_path), os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError:
+            self._history_cache = []
+            return self._history_cache
+        try:
+            raw = b""
+            while True:
+                chunk = os.read(fd, 65536)
+                if not chunk:
+                    break
+                raw += chunk
+        finally:
+            os.close(fd)
+        records: list[UsageRecord] = []
+        for line in raw.decode("utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+                records.append(UsageRecord.from_dict(data))
+            except (json.JSONDecodeError, TypeError, KeyError):
+                continue
+        self._history_cache = records
+        return self._history_cache
