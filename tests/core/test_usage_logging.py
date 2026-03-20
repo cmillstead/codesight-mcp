@@ -1,5 +1,7 @@
 """Tests for UsageRecord and UsageLogger."""
 
+import json
+import os
 import threading
 import time
 
@@ -207,3 +209,76 @@ class TestUsageLoggerMemory:
         logger = UsageLogger(enabled=False)
         logger.record(self._make_record())
         assert len(logger.get_records()) == 0
+
+
+# ---------------------------------------------------------------------------
+# TestUsageLoggerFile
+# ---------------------------------------------------------------------------
+
+class TestUsageLoggerFile:
+    def _make_record(self, tool_name: str = "test_tool", success: bool = True,
+                     response_time_ms: int = 100, timestamp: float | None = None) -> UsageRecord:
+        return UsageRecord(
+            tool_name=tool_name,
+            timestamp=timestamp or time.time(),
+            success=success,
+            error_message=None if success else "err",
+            response_time_ms=response_time_ms,
+            argument_keys=[],
+        )
+
+    def test_writes_jsonl_to_disk(self, tmp_path):
+        log_file = tmp_path / "usage.jsonl"
+        logger = UsageLogger(log_path=str(log_file))
+        logger.record(self._make_record(tool_name="alpha", timestamp=1.0))
+        logger.record(self._make_record(tool_name="beta", timestamp=2.0))
+        lines = log_file.read_text().strip().split("\n")
+        assert len(lines) == 2
+        first = json.loads(lines[0])
+        assert first["tool_name"] == "alpha"
+        second = json.loads(lines[1])
+        assert second["tool_name"] == "beta"
+
+    def test_file_created_with_0o600_permissions(self, tmp_path):
+        log_file = tmp_path / "usage.jsonl"
+        logger = UsageLogger(log_path=str(log_file))
+        logger.record(self._make_record())
+        assert log_file.stat().st_mode & 0o777 == 0o600
+
+    def test_parent_dir_created_with_0o700(self, tmp_path):
+        subdir = tmp_path / "logs" / "deep"
+        log_file = subdir / "usage.jsonl"
+        logger = UsageLogger(log_path=str(log_file))
+        logger.record(self._make_record())
+        assert subdir.stat().st_mode & 0o777 == 0o700
+
+    def test_file_rotation_at_50mb(self, tmp_path):
+        log_file = tmp_path / "usage.jsonl"
+        # Pre-create a file larger than 50MB
+        log_file.write_bytes(b"x" * (50 * 1024 * 1024 + 1))
+        os.chmod(str(log_file), 0o600)
+        logger = UsageLogger(log_path=str(log_file))
+        logger.record(self._make_record(tool_name="after_rotate"))
+        rotated = tmp_path / "usage.jsonl.1"
+        assert rotated.exists()
+        lines = log_file.read_text().strip().split("\n")
+        assert len(lines) == 1
+        assert json.loads(lines[0])["tool_name"] == "after_rotate"
+
+    def test_symlink_log_path_rejected(self, tmp_path):
+        real_file = tmp_path / "real.jsonl"
+        real_file.write_text("")
+        link = tmp_path / "link.jsonl"
+        link.symlink_to(real_file)
+        logger = UsageLogger(log_path=str(link))
+        logger.record(self._make_record())
+        # Real file should remain empty — symlink rejected by O_NOFOLLOW
+        assert real_file.read_text() == ""
+
+    def test_file_write_failure_does_not_break_memory_logging(self, tmp_path):
+        # Use a directory as the log path — os.open will fail
+        bad_path = tmp_path / "a_dir"
+        bad_path.mkdir()
+        logger = UsageLogger(log_path=str(bad_path))
+        logger.record(self._make_record())
+        assert len(logger.get_records()) == 1

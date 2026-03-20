@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import os
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
+
+from .locking import ensure_private_dir
+
+_MAX_LOG_BYTES = 50 * 1024 * 1024
 
 
 @dataclass
@@ -54,7 +61,7 @@ class UsageLogger:
         self._records: list[UsageRecord] = []
         self._lock = threading.Lock()
         self._max_memory = max_memory
-        self._log_path = log_path
+        self._log_path = Path(log_path) if log_path else None
         self._enabled = enabled
 
     def record(self, rec: UsageRecord) -> None:
@@ -69,6 +76,37 @@ class UsageLogger:
                     self._records = self._records[evict_count:]
         except Exception:
             pass
+        try:
+            self._write_to_file(rec)
+        except Exception:
+            pass
+
+    def _write_to_file(self, rec: UsageRecord) -> None:
+        """Write a record as JSONL to the log file."""
+        if self._log_path is None:
+            return
+        path = self._log_path
+        ensure_private_dir(path.parent)
+        # Rotate if file exceeds size limit
+        if path.exists() and not path.is_symlink():
+            try:
+                if path.stat().st_size > _MAX_LOG_BYTES:
+                    rotated = path.with_name(path.name + ".1")
+                    if rotated.exists():
+                        rotated.unlink()
+                    path.rename(rotated)
+            except OSError:
+                pass
+        data_bytes = (json.dumps(rec.to_dict()) + "\n").encode()
+        fd = os.open(
+            str(path),
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW,
+            0o600,
+        )
+        try:
+            os.write(fd, data_bytes)
+        finally:
+            os.close(fd)
 
     def get_records(self, tool_name: str | None = None) -> list[UsageRecord]:
         """Return a copy of records, optionally filtered by tool_name."""
