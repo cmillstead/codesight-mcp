@@ -9,10 +9,10 @@
   </a>
   <img src="https://img.shields.io/badge/MCP-Compatible-green?style=flat-square" alt="MCP Compatible">
   <img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square&logo=python" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/tests-1558-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1593-brightgreen?style=flat-square" alt="Tests">
 </p>
 
-An **MCP server** that indexes local and GitHub codebases via tree-sitter AST parsing, then exposes 27 tools for symbol retrieval, code graph traversal, and impact analysis — all with byte-offset precision to cut token costs by ~99% compared to sending full files. Supports 15 languages.
+An **MCP server** that indexes local and GitHub codebases via tree-sitter AST parsing, then exposes 28 tools for symbol retrieval, code graph traversal, and impact analysis — all with byte-offset precision to cut token costs by ~99% compared to sending full files. Supports 15 languages.
 
 Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gravelle, with code graph techniques from [CodeGraphContext](https://github.com/CodeGraphContext/CodeGraphContext) and security patterns from [basalt-mcp](https://github.com/cmillstead/basalt-mcp).
 
@@ -51,7 +51,7 @@ Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gra
 - **6-step path validation chain** — null bytes, traversal, limits, resolution, containment, symlinks
 - **Content boundary markers** — indirect prompt injection defense (Microsoft spotlighting research)
 - **Error sanitization** — raw exceptions never reach the AI; system paths are always stripped
-- **1,558 tests** — adversarial, security, integration, benchmark, fuzz, and stress coverage with real temp directories
+- **1,593 tests** — adversarial, security, integration, benchmark, fuzz, and stress coverage with real temp directories
 
 ---
 
