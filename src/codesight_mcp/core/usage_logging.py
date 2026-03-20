@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time as _time
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +24,7 @@ class UsageRecord:
     error_message: str | None
     response_time_ms: int
     argument_keys: list[str] = field(default_factory=list)
+    session_id: str = field(default="")
 
     def __post_init__(self) -> None:
         self.response_time_ms = (self.response_time_ms + 5) // 10 * 10
@@ -35,17 +37,19 @@ class UsageRecord:
             "error_message": self.error_message,
             "response_time_ms": self.response_time_ms,
             "argument_keys": list(self.argument_keys),
+            "session_id": self.session_id,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> UsageRecord:
         return cls(
-            tool_name=data["tool_name"],
-            timestamp=data["timestamp"],
-            success=data["success"],
-            error_message=data["error_message"],
-            response_time_ms=data["response_time_ms"],
-            argument_keys=data["argument_keys"],
+            tool_name=data.get("tool_name", ""),
+            timestamp=data.get("timestamp", 0.0),
+            success=data.get("success", False),
+            error_message=data.get("error_message"),
+            response_time_ms=data.get("response_time_ms", 0),
+            argument_keys=data.get("argument_keys", []),
+            session_id=data.get("session_id", ""),
         )
 
 
@@ -63,6 +67,7 @@ class UsageLogger:
         self._max_memory = max(1, max_memory)
         self._log_path = Path(log_path) if log_path else None
         self._enabled = enabled
+        self._session_id = f"{os.getpid()}-{_time.time():.0f}"
 
     @classmethod
     def from_env(cls) -> UsageLogger:
@@ -84,6 +89,7 @@ class UsageLogger:
             return
         try:
             with self._lock:
+                rec.session_id = self._session_id
                 self._records.append(rec)
                 if len(self._records) > self._max_memory:
                     evict_count = max(1, int(self._max_memory * 0.2))

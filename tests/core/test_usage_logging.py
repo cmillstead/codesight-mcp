@@ -84,6 +84,7 @@ class TestUsageRecord:
             "error_message": None,
             "response_time_ms": 130,
             "argument_keys": ["repo"],
+            "session_id": "",
         }
 
     def test_from_dict(self):
@@ -98,6 +99,52 @@ class TestUsageRecord:
         d = original.to_dict()
         restored = UsageRecord.from_dict(d)
         assert restored == original
+
+    def test_session_id_defaults_to_empty_string(self):
+        rec = UsageRecord(
+            tool_name="t",
+            timestamp=0.0,
+            success=True,
+            error_message=None,
+            response_time_ms=10,
+        )
+        assert rec.session_id == ""
+
+    def test_session_id_in_to_dict(self):
+        rec = UsageRecord(
+            tool_name="t",
+            timestamp=0.0,
+            success=True,
+            error_message=None,
+            response_time_ms=10,
+            session_id="123-1000",
+        )
+        d = rec.to_dict()
+        assert d["session_id"] == "123-1000"
+
+    def test_session_id_roundtrip_via_from_dict(self):
+        rec = UsageRecord(
+            tool_name="t",
+            timestamp=0.0,
+            success=True,
+            error_message=None,
+            response_time_ms=10,
+            session_id="abc-999",
+        )
+        restored = UsageRecord.from_dict(rec.to_dict())
+        assert restored.session_id == "abc-999"
+
+    def test_from_dict_missing_session_id_defaults_empty(self):
+        data = {
+            "tool_name": "old_tool",
+            "timestamp": 1.0,
+            "success": True,
+            "error_message": None,
+            "response_time_ms": 50,
+            "argument_keys": [],
+        }
+        rec = UsageRecord.from_dict(data)
+        assert rec.session_id == ""
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +256,20 @@ class TestUsageLoggerMemory:
         logger = UsageLogger(enabled=False)
         logger.record(self._make_record())
         assert len(logger.get_records()) == 0
+
+    def test_logger_stamps_session_id_on_records(self):
+        logger = UsageLogger()
+        rec = self._make_record()
+        logger.record(rec)
+        records = logger.get_records()
+        assert records[0].session_id == logger._session_id
+
+    def test_session_id_format_pid_dash_timestamp(self):
+        logger = UsageLogger()
+        parts = logger._session_id.split("-")
+        assert len(parts) == 2
+        int(parts[0])  # pid must be an integer
+        int(parts[1])  # epoch seconds must be an integer
 
 
 # ---------------------------------------------------------------------------
