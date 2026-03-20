@@ -11,3 +11,6 @@ docs/plans/
 .worktrees/
 _bmad-output/
 .harness-verified
+.DS_Store
+docs/superpowers/
+usage.jsonl*
