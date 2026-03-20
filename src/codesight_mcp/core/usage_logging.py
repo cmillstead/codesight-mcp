@@ -60,9 +60,23 @@ class UsageLogger:
     ) -> None:
         self._records: list[UsageRecord] = []
         self._lock = threading.Lock()
-        self._max_memory = max_memory
+        self._max_memory = max(1, max_memory)
         self._log_path = Path(log_path) if log_path else None
         self._enabled = enabled
+
+    @classmethod
+    def from_env(cls) -> UsageLogger:
+        """Create a UsageLogger configured from environment variables."""
+        log_path = os.environ.get("CODESIGHT_USAGE_LOG") or None
+        enabled = os.environ.get("CODESIGHT_USAGE_ENABLED", "1") != "0"
+        max_memory = 10_000
+        raw = os.environ.get("CODESIGHT_USAGE_MAX_MEMORY")
+        if raw:
+            try:
+                max_memory = int(raw)
+            except ValueError:
+                pass
+        return cls(max_memory=max_memory, log_path=log_path, enabled=enabled)
 
     def record(self, rec: UsageRecord) -> None:
         """Append a record. Silently catches all exceptions."""

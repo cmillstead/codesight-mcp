@@ -282,3 +282,57 @@ class TestUsageLoggerFile:
         logger = UsageLogger(log_path=str(bad_path))
         logger.record(self._make_record())
         assert len(logger.get_records()) == 1
+
+
+# ---------------------------------------------------------------------------
+# TestUsageLoggerConfig
+# ---------------------------------------------------------------------------
+
+_USAGE_ENV_VARS = ("CODESIGHT_USAGE_LOG", "CODESIGHT_USAGE_ENABLED", "CODESIGHT_USAGE_MAX_MEMORY")
+
+
+class TestUsageLoggerConfig:
+    """Tests for UsageLogger.from_env() using real os.environ."""
+
+    def setup_method(self):
+        """Save and clear usage env vars before each test."""
+        self._saved = {k: os.environ.pop(k) for k in _USAGE_ENV_VARS if k in os.environ}
+
+    def teardown_method(self):
+        """Restore original env vars after each test."""
+        for k in _USAGE_ENV_VARS:
+            os.environ.pop(k, None)
+        for k, v in self._saved.items():
+            os.environ[k] = v
+
+    def test_from_env_defaults(self):
+        logger = UsageLogger.from_env()
+        assert logger._enabled is True
+        assert logger._max_memory == 10_000
+        assert logger._log_path is None
+
+    def test_from_env_custom_log_path(self, tmp_path):
+        log_file = str(tmp_path / "usage.jsonl")
+        os.environ["CODESIGHT_USAGE_LOG"] = log_file
+        logger = UsageLogger.from_env()
+        assert str(logger._log_path) == log_file
+
+    def test_from_env_disabled(self):
+        os.environ["CODESIGHT_USAGE_ENABLED"] = "0"
+        logger = UsageLogger.from_env()
+        assert logger._enabled is False
+
+    def test_from_env_enabled_explicit(self):
+        os.environ["CODESIGHT_USAGE_ENABLED"] = "1"
+        logger = UsageLogger.from_env()
+        assert logger._enabled is True
+
+    def test_from_env_custom_max_memory(self):
+        os.environ["CODESIGHT_USAGE_MAX_MEMORY"] = "500"
+        logger = UsageLogger.from_env()
+        assert logger._max_memory == 500
+
+    def test_from_env_invalid_max_memory_uses_default(self):
+        os.environ["CODESIGHT_USAGE_MAX_MEMORY"] = "notanumber"
+        logger = UsageLogger.from_env()
+        assert logger._max_memory == 10_000
