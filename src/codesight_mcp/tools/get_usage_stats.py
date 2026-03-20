@@ -27,7 +27,7 @@ def get_usage_stats(
 
     total_calls = sum(s["total_calls"] for s in per_tool.values())
 
-    called = set(per_tool.keys())
+    called = set(logger.get_stats().keys())
     uncalled_tools = sorted(
         t for t in all_tool_names
         if t not in called and t != "get_usage_stats"

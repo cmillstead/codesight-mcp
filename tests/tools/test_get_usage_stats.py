@@ -61,3 +61,16 @@ class TestGetUsageStats:
         assert "a" in result["per_tool"]
         assert "b" not in result["per_tool"]
         assert result["total_calls"] == 1
+
+    def test_filter_by_tool_name_uncalled_uses_full_history(self):
+        """uncalled_tools should reflect ALL calls, not just the filtered tool."""
+        records = [
+            UsageRecord(tool_name="a", timestamp=1.0, success=True, error_message=None, response_time_ms=100),
+            UsageRecord(tool_name="b", timestamp=2.0, success=True, error_message=None, response_time_ms=200),
+        ]
+        logger = self._make_logger(records)
+        all_tools = ["a", "b", "c"]
+        result = get_usage_stats(logger=logger, all_tool_names=all_tools, tool_name="a")
+        # "b" was called — it should NOT be in uncalled even though we filtered to "a"
+        assert "b" not in result["uncalled_tools"]
+        assert result["uncalled_tools"] == ["c"]
