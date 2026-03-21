@@ -44,6 +44,9 @@ Use `Read` for reading files (code or config). Use codesight for *finding* thing
 - `compare_symbols` — symbol-level diff between two indexed versions (by content hash)
 - `get_changes` — git diff → affected symbols → optional impact analysis
 
+### Usage Stats
+- `get_usage_stats` — per-tool call counts, error rates, avg response times, and uncalled tools
+
 Use `Read` only when you need content that isn't a named symbol (e.g. config files, pyproject.toml).
 
 ## Running Tests

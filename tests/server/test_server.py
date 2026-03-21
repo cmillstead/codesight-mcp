@@ -8,17 +8,17 @@ import pytest
 from codesight_mcp.server import (
     call_tool,
     list_tools,
-    server,
+    _usage_logger,
 )
 from codesight_mcp.core.rate_limiting import _rate_limit
 
 
 @pytest.mark.asyncio
 async def test_server_lists_all_tools():
-    """Test that server lists all 27 tools."""
+    """Test that server lists all 28 tools."""
     tools = await list_tools()
 
-    assert len(tools) == 27
+    assert len(tools) == 28
 
     names = {t.name for t in tools}
     expected = {
@@ -31,6 +31,7 @@ async def test_server_lists_all_tools():
         "analyze_complexity", "get_key_symbols", "get_diagram",
         "get_symbol_context", "search_references", "get_dependencies",
         "compare_symbols", "get_changes",
+        "get_usage_stats",
     }
     assert names == expected
 
@@ -1012,3 +1013,87 @@ class TestCLISubcommands:
         # main() calls asyncio.run(run_server()) which should not raise
         server_module.main()
         assert server_started
+
+
+# -- Usage logging integration tests ------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_call_tool_records_usage():
+    """call_tool records a UsageRecord for each invocation."""
+    with _usage_logger._lock:
+        _usage_logger._records.clear()
+    result = await call_tool("get_status", {})
+    data = json.loads(result[0].text)
+    assert "error" not in data
+    records = _usage_logger.get_records()
+    assert len(records) >= 1
+    rec = records[-1]
+    assert rec.tool_name == "get_status"
+    assert rec.success is True
+    assert rec.response_time_ms >= 0
+
+
+@pytest.mark.asyncio
+async def test_call_tool_does_not_log_get_usage_stats():
+    """get_usage_stats is excluded from its own logging."""
+    with _usage_logger._lock:
+        _usage_logger._records.clear()
+    await call_tool("get_usage_stats", {})
+    records = _usage_logger.get_records(tool_name="get_usage_stats")
+    assert len(records) == 0
+
+
+@pytest.mark.asyncio
+async def test_call_tool_logs_arg_keys_not_values():
+    """Usage records capture argument keys but not values."""
+    with _usage_logger._lock:
+        _usage_logger._records.clear()
+    await call_tool("get_file_outline", {"repo": "nonexistent/repo", "file_path": "main.py"})
+    records = _usage_logger.get_records(tool_name="get_file_outline")
+    assert len(records) >= 1
+    rec = records[-1]
+    assert "file_path" in rec.argument_keys
+    assert "repo" in rec.argument_keys
+    # Values should NOT be in the record
+    assert not hasattr(rec, 'argument_values')
+
+
+class TestCLIUsageLogging:
+    """CLI dispatch (_run_cli_tool) records usage."""
+
+    def test_cli_tool_records_usage(self):
+        """_run_cli_tool records a UsageRecord for the dispatched tool."""
+        from codesight_mcp.server import _run_cli_tool, _usage_logger
+        with _usage_logger._lock:
+            _usage_logger._records.clear()
+        with pytest.raises(SystemExit):
+            _run_cli_tool("get_status", [])
+        records = _usage_logger.get_records(tool_name="get_status")
+        # Filter to current session to avoid file history
+        current = [r for r in records if r.session_id == _usage_logger._session_id]
+        assert len(current) >= 1
+        assert current[-1].tool_name == "get_status"
+        assert current[-1].response_time_ms >= 0
+
+    def test_cli_tool_does_not_log_get_usage_stats(self):
+        """get_usage_stats via CLI is excluded from its own logging."""
+        from codesight_mcp.server import _run_cli_tool, _usage_logger
+        with _usage_logger._lock:
+            _usage_logger._records.clear()
+        with pytest.raises(SystemExit):
+            _run_cli_tool("get_usage_stats", [])
+        records = _usage_logger.get_records(tool_name="get_usage_stats")
+        current = [r for r in records if r.session_id == _usage_logger._session_id]
+        assert len(current) == 0
+
+    def test_cli_tool_logs_failure(self):
+        """CLI tool that fails still gets a usage record."""
+        from codesight_mcp.server import _run_cli_tool, _usage_logger
+        with _usage_logger._lock:
+            _usage_logger._records.clear()
+        with pytest.raises(SystemExit):
+            _run_cli_tool("get_symbol", ["--repo", "nonexistent/repo", "--symbol-id", "fake"])
+        records = _usage_logger.get_records(tool_name="get_symbol")
+        current = [r for r in records if r.session_id == _usage_logger._session_id]
+        assert len(current) >= 1
