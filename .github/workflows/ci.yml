@@ -49,3 +49,27 @@ jobs:
           name: test-results-shard-${{ matrix.group }}
           path: test-results/
           retention-days: 30
+
+  dependency-audit:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098  # v7.3.1
+        with:
+          version: "0.9.17"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies (frozen)
+        run: uv sync --frozen --extra test
+
+      - name: Run pip-audit
+        run: uv run --with pip-audit pip-audit
