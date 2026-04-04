@@ -6,10 +6,16 @@
 # grammars are well-tested; in-process parsing is required for performance.
 """
 
+from __future__ import annotations
+
 import logging
 import threading
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
 from tree_sitter import Language, Parser
+
+if TYPE_CHECKING:
+    from tree_sitter import Node
 
 from .complexity import compute_complexity
 from .languages import _strip_quotes
@@ -69,9 +75,9 @@ def _get_parser(lang_name: str) -> Parser | None:
     parser = Parser(binding)
     return parser
 
-from .symbols import Symbol, make_symbol_id, compute_content_hash
-from .languages import LanguageSpec, LANGUAGE_REGISTRY
-from ..security import sanitize_signature_for_api
+from .symbols import Symbol, make_symbol_id, compute_content_hash  # noqa: E402
+from .languages import LanguageSpec, LANGUAGE_REGISTRY  # noqa: E402
+from ..security import sanitize_signature_for_api  # noqa: E402
 
 
 def parse_file(content: str, filename: str, language: str) -> list[Symbol]:
@@ -519,7 +525,7 @@ def _extract_callee_name(node, source_bytes: bytes) -> Optional[str]:
     return None
 
 
-def _find_dart_body_sibling(node) -> Optional["Node"]:
+def _find_dart_body_sibling(node) -> Node | None:
     """Find the function_body sibling that follows a Dart function/method_signature."""
     if node.type not in ("function_signature", "method_signature"):
         return None

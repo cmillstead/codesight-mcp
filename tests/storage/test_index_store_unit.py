@@ -6,10 +6,8 @@ and edge cases around error paths, security validation, and concurrent access.
 
 import gzip
 import json
-import os
 import threading
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -823,7 +821,7 @@ class TestSaveSpecialCharsInRepoName:
     def test_hyphen_underscore_dot_in_name(self, tmp_path: Path) -> None:
         store = _make_store(tmp_path)
 
-        saved = store.save_index(
+        _saved = store.save_index(
             owner="my-org",
             name="my.repo-name_v2",
             source_files=["main.py"],

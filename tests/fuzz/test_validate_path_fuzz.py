@@ -148,7 +148,7 @@ def test_traversal_variants(tmp_path):
             path = f"{atom}/{suffix}"
 
         # NFC-normalize the atom to check if it collapses to ".."
-        normalized = unicodedata.normalize("NFC", atom)
+        _normalized = unicodedata.normalize("NFC", atom)
         # The path must either be rejected or the normalized form is not ".."
         # and the resolved path stays inside root
         try:

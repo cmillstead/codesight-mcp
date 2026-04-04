@@ -1,10 +1,8 @@
 """Tests for get_file_tree._build_tree (TEST-MED-1) and spotlighting (ADV-HIGH-2)."""
 
 import tempfile
-from collections import Counter
 from types import SimpleNamespace
 
-import pytest
 
 from codesight_mcp.tools.get_file_tree import _build_tree, get_file_tree
 from codesight_mcp.storage import IndexStore

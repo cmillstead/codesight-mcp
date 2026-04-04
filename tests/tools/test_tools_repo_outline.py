@@ -1,8 +1,7 @@
 """Tests for get_repo_outline (TEST-MED-2) and spotlighting (ADV-HIGH-3)."""
 
-import pytest
 
-from codesight_mcp.storage import IndexStore, CodeIndex
+from codesight_mcp.storage import IndexStore
 from codesight_mcp.parser import Symbol
 from codesight_mcp.tools.get_repo_outline import get_repo_outline
 

@@ -5,14 +5,12 @@ Covers Tasks 2-20 from the scan implementation plan.
 
 import json
 import os
-import re
 import threading
 
 import pytest
 
 from codesight_mcp.parser.symbols import Symbol
-from codesight_mcp.storage import IndexStore, INDEX_VERSION
-from codesight_mcp.security import sanitize_signature_for_api
+from codesight_mcp.storage import IndexStore
 
 
 # ---------------------------------------------------------------------------

@@ -4,10 +4,8 @@ Verifies that the extract_name and extract_call_target callables on LanguageSpec
 produce the same results as the old hardcoded if-blocks in extractor.py.
 """
 
-import pytest
 from codesight_mcp.parser.extractor import parse_file
 from codesight_mcp.parser.languages import (
-    LanguageSpec,
     LANGUAGE_REGISTRY,
     _extract_name_c_cpp,
     _extract_name_dart,

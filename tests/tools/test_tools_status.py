@@ -1,8 +1,6 @@
 """Tests for the get_status tool."""
 
-import os
 
-import pytest
 
 from codesight_mcp.tools.get_status import get_status
 from codesight_mcp.storage import IndexStore, INDEX_VERSION

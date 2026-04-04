@@ -1,8 +1,5 @@
 """Tests for storage module."""
 
-import pytest
-import json
-from pathlib import Path
 
 from codesight_mcp.storage import IndexStore, CodeIndex
 from codesight_mcp.parser import Symbol
@@ -36,7 +33,7 @@ def test_save_index_logs_skipped_content_files(tmp_path, caplog):
     }
 
     with caplog.at_level(logging.WARNING, logger="codesight_mcp.storage.index_store"):
-        index = store.save_index(
+        _index = store.save_index(
             owner="testowner",
             name="testrepo",
             source_files=["test.py"],
@@ -512,7 +509,8 @@ def test_cleanup_stale_temps_matches_pid_suffixed_files(tmp_path):
     stale_tmp = tmp_path / "owner__repo.json.gz.tmp.12345.140234567890"
     stale_tmp.write_bytes(b"stale")
     # Backdate mtime by 120 seconds
-    import os, time
+    import os
+    import time
     os.utime(stale_tmp, (time.time() - 120, time.time() - 120))
 
     store._cleanup_stale_temps()

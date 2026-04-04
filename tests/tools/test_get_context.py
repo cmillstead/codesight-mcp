@@ -1,6 +1,5 @@
 """Tests for the get_symbol_context tool."""
 
-import pytest
 
 from codesight_mcp.tools.get_symbol_context import get_symbol_context, _GRAPH_CAP
 from codesight_mcp.storage import IndexStore

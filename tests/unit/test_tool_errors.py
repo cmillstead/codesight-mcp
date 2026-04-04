@@ -7,14 +7,12 @@ invalid parameters.
 
 import pytest
 
-from codesight_mcp.core.validation import ValidationError
 from codesight_mcp.parser.symbols import Symbol
 from codesight_mcp.storage import IndexStore
 from codesight_mcp.tools.get_symbol import get_symbol
 from codesight_mcp.tools.get_file_outline import get_file_outline
 from codesight_mcp.tools.search_symbols import search_symbols
 from codesight_mcp.tools.get_callers import get_callers
-from codesight_mcp.tools.get_callees import get_callees
 from codesight_mcp.tools.get_imports import get_imports
 from codesight_mcp.tools.get_impact import get_impact
 from codesight_mcp.tools.get_type_hierarchy import get_type_hierarchy

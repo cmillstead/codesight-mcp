@@ -140,7 +140,7 @@ def test_concurrent_threads_no_data_corruption(rate_dir):
 def test_no_deadlock_under_heavy_contention(rate_dir):
     """50 threads all calling _rate_limit complete within 30 seconds."""
     barrier = threading.Barrier(50, timeout=10)
-    completed = threading.Event()
+    _completed = threading.Event()
 
     def worker():
         barrier.wait()

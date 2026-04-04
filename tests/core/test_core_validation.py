@@ -1,6 +1,5 @@
 """Tests for path validation chain."""
 
-import os
 import tempfile
 import unicodedata
 from pathlib import Path

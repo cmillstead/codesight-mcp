@@ -1,12 +1,9 @@
 """Tests for search_text tool — spotlighting (ADV-HIGH-1) and existing behaviour."""
 
 import tempfile
-from pathlib import Path
 
-import pytest
 
 from codesight_mcp.storage import IndexStore
-from codesight_mcp.parser.symbols import Symbol
 from codesight_mcp.tools.search_text import search_text
 
 

@@ -7,7 +7,6 @@ Uses a generic set of branch node types that works across most tree-sitter
 grammars, with per-language overrides for language-specific constructs.
 """
 
-from typing import Optional
 
 # Node types that represent branching decisions (common across grammars).
 _BRANCH_NODES: frozenset[str] = frozenset({

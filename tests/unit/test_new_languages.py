@@ -1,6 +1,5 @@
 """Tests for the 8 new language parsers: C, C++, C#, Ruby, Swift, Kotlin, Dart, Perl."""
 
-import pytest
 
 from codesight_mcp.parser.extractor import parse_file
 

@@ -1,6 +1,5 @@
 """Tests for parser/hierarchy.py: build_symbol_tree and flatten_tree."""
 
-import pytest
 
 from codesight_mcp.parser.symbols import Symbol
 from codesight_mcp.parser.hierarchy import SymbolNode, build_symbol_tree, flatten_tree

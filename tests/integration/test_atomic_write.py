@@ -229,7 +229,7 @@ class TestAtomicWriteAtomicity:
         target = tmp_path / "test_output.json.gz"
 
         # Simulate a write error by patching os.fdopen to raise
-        original_fdopen = os.fdopen
+        _original_fdopen = os.fdopen
 
         def failing_fdopen(fd, *args, **kwargs):
             os.close(fd)

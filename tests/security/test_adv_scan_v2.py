@@ -1,14 +1,10 @@
 """Tests for adversarial scan v2 findings (2026-03-08b)."""
 
 import gzip
-import importlib
 import json
 import os
-import stat
-import subprocess
-import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -18,7 +14,6 @@ from codesight_mcp.summarizer.batch_summarize import (
     BatchSummarizer,
     _contains_injection_phrase,
     extract_summary_from_docstring,
-    _VALID_KINDS,
 )
 
 
@@ -435,7 +430,7 @@ class TestOpenNoFollowFdLeak:
         test_file = tmp_path / "test.txt"
         test_file.write_text("hello")
 
-        original_io_open = io.open
+        _original_io_open = io.open
         with patch.object(io, "open", side_effect=ValueError("mock")):
             with patch("os.close") as mock_close:
                 with pytest.raises(ValueError, match="mock"):

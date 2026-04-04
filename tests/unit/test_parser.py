@@ -1,7 +1,7 @@
 """Tests for the parser module (Phase 1)."""
 
 import pytest
-from codesight_mcp.parser import parse_file, Symbol
+from codesight_mcp.parser import parse_file
 from codesight_mcp.parser.extractor import _get_parser
 
 
@@ -305,7 +305,8 @@ class TestGetSymbolSourceRedaction:
         content_dir = store._content_dir(owner, name)
         content_dir.mkdir(parents=True, exist_ok=True)
 
-        import hashlib, os
+        import hashlib
+        import os
         dest = content_dir / "main.py"
         dest.write_bytes(body.encode())
         os.chmod(str(dest), 0o600)
@@ -357,7 +358,8 @@ class TestGetSymbolSourceRedaction:
         content_dir = store._content_dir(owner, name)
         content_dir.mkdir(parents=True, exist_ok=True)
 
-        import hashlib, os
+        import hashlib
+        import os
         dest = content_dir / "math.py"
         dest.write_bytes(body.encode())
         os.chmod(str(dest), 0o600)

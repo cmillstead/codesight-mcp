@@ -49,7 +49,6 @@ def _reset_rate_limiter():
 
 def test_rate_limit_fails_closed_after_threshold(tmp_path):
     """After consecutive write failures, rate_limit should deny calls."""
-    from codesight_mcp.core import rate_limiting
 
     _reset_rate_limiter()
 

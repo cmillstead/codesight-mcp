@@ -13,7 +13,6 @@ import pytest
 from codesight_mcp.server import (
     _parse_cli_args,
     _run_cli_tool,
-    _sanitize_arguments,
     _usage_logger,
 )
 from codesight_mcp.tools.registry import get_all_specs

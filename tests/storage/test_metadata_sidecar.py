@@ -1,11 +1,9 @@
 """Tests for metadata sidecar files written alongside indexes."""
 
 import json
-import pytest
-from pathlib import Path
 from unittest.mock import patch
 
-from codesight_mcp.storage import IndexStore, CodeIndex
+from codesight_mcp.storage import IndexStore
 from codesight_mcp.parser import Symbol
 
 

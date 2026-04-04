@@ -8,7 +8,6 @@ must patch the module-level constant directly.
 import os
 from unittest.mock import patch
 
-import pytest
 
 from codesight_mcp.security import sanitize_signature_for_api, _no_redact
 import codesight_mcp.security as security_mod

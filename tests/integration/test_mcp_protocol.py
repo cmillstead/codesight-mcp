@@ -6,9 +6,8 @@ the server dispatch works correctly.
 
 import json
 
-import pytest
 
-from codesight_mcp.server import server, call_tool, list_tools
+from codesight_mcp.server import call_tool, list_tools
 from codesight_mcp.tools.registry import get_all_specs
 
 

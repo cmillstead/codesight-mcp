@@ -2,7 +2,6 @@
 
 import hashlib
 
-import pytest
 
 from codesight_mcp.tools.get_symbol import get_symbol, get_symbols
 from codesight_mcp.storage import IndexStore

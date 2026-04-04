@@ -1,6 +1,5 @@
 """Tests for the discovery module — local file walks and GitHub tree filtering."""
 
-import os
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -8,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from codesight_mcp.discovery import (
-    SKIP_PATTERNS,
     should_skip_file,
     _load_gitignore,
     _is_symlink_escape,
@@ -17,7 +15,7 @@ from codesight_mcp.discovery import (
     parse_github_url,
     discover_source_files,
 )
-from codesight_mcp.core.limits import MAX_FILE_SIZE, MAX_FILE_COUNT
+from codesight_mcp.core.limits import MAX_FILE_SIZE
 
 
 # ---------------------------------------------------------------------------
@@ -644,7 +642,6 @@ class TestIndexFolderONoFollow:
     def test_gitignore_symlink_skipped(self, tmp_path):
         """A .gitignore that is a symlink must be skipped safely (not followed)."""
         import sys
-        import os
 
         if sys.platform == "win32":
             pytest.skip("Symlinks not reliable on Windows")
@@ -667,7 +664,6 @@ class TestIndexFolderONoFollow:
     def test_binary_sniff_symlink_skipped(self, tmp_path):
         """Content-level binary sniff must skip symlinks via O_NOFOLLOW (SEC-MED-2)."""
         import sys
-        import os
         from codesight_mcp.discovery import discover_local_files
 
         if sys.platform == "win32":

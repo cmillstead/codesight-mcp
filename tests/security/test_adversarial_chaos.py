@@ -24,17 +24,14 @@ from codesight_mcp.core.validation import (
 from codesight_mcp.core.errors import sanitize_error, strip_system_paths, GENERIC_FALLBACK
 from codesight_mcp.core.boundaries import make_meta, wrap_untrusted_content
 from codesight_mcp.core.limits import (
-    MAX_DIRECTORY_DEPTH,
     MAX_FILE_COUNT,
     MAX_FILE_SIZE,
     MAX_INDEX_SIZE,
-    MAX_PATH_LENGTH,
 )
 from codesight_mcp.security import (
     is_secret_file,
     safe_read_file,
     sanitize_repo_identifier,
-    validate_file_access,
 )
 from codesight_mcp.storage.index_store import IndexStore
 from codesight_mcp.discovery import (

@@ -1,9 +1,7 @@
 """Tests for get_file_outline tool."""
 
-import pytest
 
 from codesight_mcp.tools.get_file_outline import get_file_outline
-from codesight_mcp.core.validation import ValidationError
 from codesight_mcp.parser import Symbol
 
 

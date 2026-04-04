@@ -24,13 +24,13 @@ def _make_function(name: str, num_lines: int = 10) -> str:
     """Generate a realistic Python function with docstring and logic."""
     lines = [
         f"def {name}(data: list[dict], threshold: float = 0.5) -> dict:",
-        f'    """Process data entries and return aggregated results.',
-        f"",
-        f"    Iterates over all entries in *data*, applies filtering based on",
-        f"    the given *threshold*, and returns a summary dictionary with",
-        f"    counts, totals, and per-category breakdowns.",
-        f'    """',
-        f"    results = {{'count': 0, 'total': 0.0, 'categories': {{}}}}",
+        '    """Process data entries and return aggregated results.',
+        "",
+        "    Iterates over all entries in *data*, applies filtering based on",
+        "    the given *threshold*, and returns a summary dictionary with",
+        "    counts, totals, and per-category breakdowns.",
+        '    """',
+        "    results = {'count': 0, 'total': 0.0, 'categories': {}}",
     ]
     # Fill body with realistic processing logic
     body_templates = [

@@ -4,7 +4,6 @@ import re
 import time
 from pathlib import Path
 
-import pytest
 
 from codesight_mcp.core.errors import strip_system_paths
 from codesight_mcp.summarizer.batch_summarize import BatchSummarizer
@@ -18,7 +17,7 @@ class TestPathPatternReDoS:
         """Pathological input must complete in under 1 second."""
         evil_input = "/a" * 50 + "!"
         start = time.time()
-        result = strip_system_paths(evil_input)
+        _result = strip_system_paths(evil_input)
         elapsed = time.time() - start
         assert elapsed < 1.0, f"strip_system_paths took {elapsed:.1f}s -- ReDoS detected"
 
@@ -46,7 +45,7 @@ class TestSummarizerPromptSanitization:
         prompt, _sub_nonces = summarizer._build_prompt([sym], nonce="testnonc")
         # The injected "2." must not appear on its own line
         lines = prompt.split("\n")
-        numbered_lines = [l for l in lines if re.match(r"^\d+\.\s", l.strip())]
+        numbered_lines = [line for line in lines if re.match(r"^\d+\.\s", line.strip())]
         # Should only have our 1 legitimate numbered entry -- ZERO because we changed format to [N]
         assert len(numbered_lines) == 0, \
             f"Prompt injection succeeded -- found extra numbered lines: {numbered_lines}"
@@ -70,7 +69,8 @@ class TestIndexFolderPathLeak:
 
     def test_no_folder_path_in_response(self):
         """The response must not contain folder_path."""
-        import tempfile, os
+        import tempfile
+        import os
         from codesight_mcp.tools.index_folder import index_folder
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -94,7 +94,8 @@ class TestIndexFolderDefaultDeny:
 
     def test_no_allowlist_returns_error(self):
         """index_folder must fail when CODESIGHT_ALLOWED_ROOTS is unset."""
-        import tempfile, os
+        import tempfile
+        import os
         from unittest.mock import patch
         from codesight_mcp.tools.index_folder import index_folder
 

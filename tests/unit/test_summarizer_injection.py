@@ -4,7 +4,6 @@ Focuses on nonce handling and injection phrase filtering in
 batch_summarize.py's _parse_response and docstring extraction.
 """
 
-import pytest
 
 from codesight_mcp.parser.symbols import Symbol
 from codesight_mcp.summarizer.batch_summarize import (

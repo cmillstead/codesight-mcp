@@ -5,7 +5,6 @@ from collections import Counter
 from typing import Optional
 
 from ..core.boundaries import make_meta, wrap_untrusted_content
-from ..core.errors import sanitize_error, RepoNotFoundError
 from ..parser import LANGUAGE_EXTENSIONS
 from ._common import RepoContext, timed, elapsed_ms
 from .registry import ToolSpec, register

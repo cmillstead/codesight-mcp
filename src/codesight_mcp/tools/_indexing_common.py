@@ -11,11 +11,11 @@ from typing import Iterable
 
 from ..core.limits import MAX_FILE_COUNT
 from ..parser import parse_file, LANGUAGE_EXTENSIONS
-
-logger = logging.getLogger(__name__)
 from ..parser.graph import CodeGraph
 from ..storage import IndexStore
 from ..summarizer import summarize_symbols
+
+logger = logging.getLogger(__name__)
 
 
 def parse_source_files(

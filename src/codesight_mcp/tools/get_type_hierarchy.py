@@ -33,9 +33,6 @@ def get_type_hierarchy(
 
     target_name = target.get("name", "")
 
-    # Use CodeGraph.get_type_hierarchy for O(1) lookups
-    hierarchy = graph.get_type_hierarchy(symbol_id)
-
     # Format parents with symbol details and relationship type
     parents: list[dict] = []
     visited_parents: set[str] = {symbol_id}

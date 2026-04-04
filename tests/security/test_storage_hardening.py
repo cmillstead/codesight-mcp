@@ -163,7 +163,7 @@ class TestBasePathPermissions:
         """base_path must have mode 0o700 after IndexStore construction."""
         with tempfile.TemporaryDirectory() as storage_tmp:
             base = Path(storage_tmp) / "idx"
-            store = IndexStore(base_path=str(base))
+            _store = IndexStore(base_path=str(base))
             mode = os.stat(str(base)).st_mode & 0o777
             assert mode == 0o700, (
                 f"base_path mode should be 0o700, got 0o{mode:o}"

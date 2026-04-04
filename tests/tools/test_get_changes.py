@@ -267,7 +267,6 @@ class TestValidateRef:
             "HEAD^",
             "refs/heads/feature/foo",
         ]
-        from codesight_mcp.core.validation import ValidationError
         for ref in valid:
             result = _validate_ref(ref)
             assert result == ref
@@ -286,7 +285,6 @@ class TestValidateRef:
             _validate_ref(long_ref)
 
     def test_exactly_max_length_accepted(self):
-        from codesight_mcp.core.validation import ValidationError
         ref = "a" * 200
         result = _validate_ref(ref)
         assert result == ref
