@@ -65,7 +65,7 @@ The server communicates via MCP protocol (stdio). It's typically configured in a
 # Install test dependencies
 uv sync --extra test
 
-# Run all tests (1,558 tests)
+# Run all tests (1,818 tests)
 uv run pytest --tb=short -q
 
 # Run specific test categories

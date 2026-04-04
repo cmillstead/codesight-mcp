@@ -178,11 +178,12 @@ All tools are rate-limited at 60 calls per minute per tool and 300 calls per min
 | Adversarial (4th round) | 2026-03-08 | 18 findings, 11 fixed | +14 |
 | Adversarial v2 (5th round) | 2026-03-08b | 16 findings fixed (2 HIGH, 6 MED, 8 LOW) | +20 |
 | Adversarial v3 (6th round) | 2026-03-08c | 8 findings (1 MED, 3 LOW, 4 INFO) | +22 |
-| **Total** | | | **1,618 tests** |
+| AEGIS remediation | 2026-04-03 | 15 RCs across 4 phases | +199 |
+| **Total** | | | **1,818 tests** |
 
 ## Testing
 
-The test suite contains **1,618 tests** across adversarial, security, integration, and unit categories covering:
+The test suite contains **1,818 tests** across adversarial, security, integration, and unit categories covering:
 
 - Control character and DEL byte injection in paths, repo IDs, and queries
 - `../` traversal in direct arguments and via poisoned index entries
