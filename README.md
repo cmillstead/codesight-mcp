@@ -9,7 +9,7 @@
   </a>
   <img src="https://img.shields.io/badge/MCP-Compatible-green?style=flat-square" alt="MCP Compatible">
   <img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square&logo=python" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/tests-1906-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1927-brightgreen?style=flat-square" alt="Tests">
 </p>
 
 An **MCP server** that indexes local and GitHub codebases via tree-sitter AST parsing, then exposes 28 tools for symbol retrieval, code graph traversal, and impact analysis — all with byte-offset precision to cut token costs by ~99% compared to sending full files. Supports 15 languages.
@@ -54,7 +54,7 @@ Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gra
 - **Content boundary markers** — indirect prompt injection defense (Microsoft spotlighting research)
 - **Error sanitization** — raw exceptions never reach the AI; system paths are always stripped
 - **MCP ToolAnnotations** — readOnlyHint, destructiveHint, idempotentHint, openWorldHint on all 28 tools for client permission decisions
-- **1,906 tests** — adversarial, security, integration, benchmark, fuzz, and stress coverage with real temp directories
+- **1,927 tests** — adversarial, security, integration, benchmark, fuzz, and stress coverage with real temp directories
 
 ---
 
@@ -421,12 +421,14 @@ search_symbols(query="password hashing utility", semantic_only=True)
 | Variable | Description |
 |----------|-------------|
 | `CODESIGHT_EMBED_PROVIDER` | Explicit provider selection (default: auto-detect) |
-| `CODESIGHT_EMBED_MODEL` | Model override (default: `BAAI/bge-small-en-v1.5`) |
+| `CODESIGHT_EMBED_MODEL` | Model override (default: `BAAI/bge-base-en-v1.5`) |
 | `CODESIGHT_NO_SEMANTIC` | Set to `1` to disable semantic features entirely |
 
 ### How It Works
 
 Embeddings are generated lazily on the first semantic query and cached in gzip-JSON sidecar files alongside the index. The cache is invalidated automatically on reindex. The default provider runs entirely on-device with no API calls. When `semantic=false` (the default), there is zero overhead -- embeddings are never loaded or computed.
+
+Keyword scoring includes compound identifier splitting (`hash_password` → `{hash, password}`, `AuthManager` → `{auth, manager}`) and suffix stemming (`hashing` → `hash`, `validates` → `validate`), so intent-based queries match even without semantic search enabled.
 
 ---
 
