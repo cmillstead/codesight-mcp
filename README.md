@@ -86,6 +86,8 @@ uv sync            # recommended — uses lockfile with pinned versions
 
 ### Step 2: Register the MCP server
 
+Use `claude mcp add` to register. This is the recommended approach from Anthropic's [code execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp) pattern — the server self-describes its tools via the MCP protocol, and your client discovers them automatically through `tools/list`. No manual tool listing or per-tool permission configuration needed.
+
 ```bash
 claude mcp add codesight-mcp \
   -e CODESIGHT_ALLOWED_ROOTS=/Users/you/src \
@@ -99,7 +101,7 @@ claude mcp add codesight-mcp \
 | `GITHUB_TOKEN` | Yes (GitHub) | Required for private repos; recommended to avoid rate limits on public repos. |
 | `ANTHROPIC_API_KEY` | No | Enables AI-generated symbol summaries. Falls back to docstrings if unset. |
 
-All 28 tools include [MCP ToolAnnotations](https://modelcontextprotocol.io/docs/concepts/tools#annotations) so your client can make permission decisions automatically:
+All 28 tools include [MCP ToolAnnotations](https://modelcontextprotocol.io/docs/concepts/tools#annotations) — each tool declares whether it's read-only, destructive, idempotent, or accesses external services. Your MCP client uses these annotations to make permission decisions automatically, so you don't need to configure permissions for each tool individually:
 
 | Annotation | Meaning | Tools |
 |------------|---------|-------|
