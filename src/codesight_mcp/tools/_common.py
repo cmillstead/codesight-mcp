@@ -4,6 +4,7 @@ Centralizes repo identifier parsing and validation so each tool
 doesn't duplicate the logic.
 """
 
+import re
 import time
 from dataclasses import dataclass
 from typing import Optional, Union
@@ -106,6 +107,66 @@ def elapsed_ms(start: float) -> float:
     return round((time.perf_counter() - start) * 1000, 1)
 
 
+_CAMEL_RE = re.compile(r'(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])')
+_SEPARATOR_RE = re.compile(r'[_\-\s]+')
+
+
+def _split_identifier(name: str) -> set[str]:
+    """Split camelCase, PascalCase, snake_case into a set of lowercase words."""
+    parts = _SEPARATOR_RE.split(name)
+    words = set()
+    for part in parts:
+        if not part:
+            continue
+        subparts = _CAMEL_RE.split(part)
+        for sp in subparts:
+            if sp:
+                words.add(sp.lower())
+    return words
+
+
+# Simple suffix-stripping stemmer (no external dependencies).
+# Each rule is (suffix, min_stem_len, replacement).
+# Order matters -- longer suffixes first to avoid partial stripping.
+_SUFFIX_RULES: list[tuple[str, int, str]] = [
+    ("ation", 3, "ate"),
+    ("ating", 3, "ate"),
+    ("ment", 3, ""),
+    ("ness", 3, ""),
+    ("ible", 3, ""),
+    ("able", 3, ""),
+    ("ence", 3, ""),
+    ("ance", 3, ""),
+    ("less", 3, ""),
+    ("ful", 3, ""),
+    ("ous", 3, ""),
+    ("ive", 3, ""),
+    ("ity", 3, ""),
+    ("ing", 3, ""),
+    ("ly", 3, ""),
+    ("er", 3, "e"),
+    ("ed", 3, "e"),
+    ("es", 3, ""),
+    ("al", 3, ""),
+    ("s", 3, ""),
+]
+
+
+def _stem(word: str) -> str:
+    """Simple suffix-stripping stemmer. No external dependencies."""
+    word = word.lower()
+    if len(word) <= 3:
+        return word
+    for suffix, min_len, replacement in _SUFFIX_RULES:
+        if word.endswith(suffix) and len(word) - len(suffix) >= min_len:
+            stem = word[:-len(suffix)] + replacement
+            # Avoid stems ending with duplicate trailing char from replacement
+            # e.g. "parsee" from "parser" -> "pars" + "e" is fine, but
+            # "parseed" would not happen with our rules.
+            return stem
+    return word
+
+
 def calculate_symbol_score(sym: dict, query_lower: str, query_words: set) -> int:
     """Calculate search score for a symbol.
 
@@ -152,6 +213,24 @@ def calculate_symbol_score(sym: dict, query_lower: str, query_words: set) -> int
     for word in query_words:
         if word in doc_lower:
             score += 1
+
+    # 7. Normalized token matching (compound splitting + stemming)
+    query_stems = {_stem(w) for w in query_words}
+
+    name_tokens = _split_identifier(sym.get("name", ""))
+    name_stems = {_stem(t) for t in name_tokens}
+    score += len(query_stems & name_stems) * 4
+
+    sig_words = set(sym.get("signature", "").lower().split())
+    sig_tokens = set()
+    for w in sig_words:
+        sig_tokens.update(_split_identifier(w))
+    sig_stems = {_stem(t) for t in sig_tokens}
+    score += len(query_stems & sig_stems) * 1
+
+    summary_words = set(sym.get("summary", "").lower().split())
+    summary_stems = {_stem(w) for w in summary_words}
+    score += len(query_stems & summary_stems) * 2
 
     return score
 

@@ -103,7 +103,7 @@ class TestLocalEmbeddingProvider:
         assert result == []
 
     def test_model_name_property(self, provider: LocalEmbeddingProvider) -> None:
-        assert provider.model_name == "BAAI/bge-small-en-v1.5"
+        assert provider.model_name == "BAAI/bge-base-en-v1.5"
 
     def test_embed_model_env_var_respected(self) -> None:
         with _env_override(

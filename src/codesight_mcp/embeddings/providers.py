@@ -42,7 +42,7 @@ class LocalEmbeddingProvider(EmbeddingProvider):
     Downloads model assets (~100 MB) on first instantiation if not cached.
     """
 
-    def __init__(self, model: str = "BAAI/bge-small-en-v1.5") -> None:
+    def __init__(self, model: str = "BAAI/bge-base-en-v1.5") -> None:
         self._model_name = model
         try:
             from fastembed import TextEmbedding  # noqa: WPS433
