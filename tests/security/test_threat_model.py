@@ -5,15 +5,13 @@ Tests that verify mitigations for threat-model-driven findings.
 
 import json
 import os
-import sys
-import unicodedata
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from codesight_mcp.parser.symbols import Symbol, make_symbol_id
-from codesight_mcp.parser.extractor import _extract_name, parse_file
+from codesight_mcp.parser.symbols import make_symbol_id
+from codesight_mcp.parser.extractor import parse_file
 
 
 class TestSymbolNameLengthCap:
@@ -66,7 +64,7 @@ class TestPosixAclCheck:
         if platform.system() != "Linux":
             pytest.skip("POSIX ACL check is Linux-only")
 
-        from codesight_mcp.storage.index_store import _makedirs_0o700, _check_posix_acls
+        from codesight_mcp.storage.index_store import _check_posix_acls
         target = tmp_path / "acl_test"
         target.mkdir(mode=0o700)
 
@@ -176,9 +174,7 @@ class TestRateLimitTempDirWarning:
     def test_permission_error_logs_warning(self, caplog):
         """When first temp dir attempt fails, a warning is logged."""
         import logging
-        from unittest.mock import patch, MagicMock
         from codesight_mcp.core.rate_limiting import _rate_limit_state_dir
-        from codesight_mcp.core.locking import ensure_private_dir
 
         call_count = 0
         def mock_ensure(path):
@@ -195,7 +191,7 @@ class TestRateLimitTempDirWarning:
         with patch("codesight_mcp.core.rate_limiting.ensure_private_dir", side_effect=mock_ensure), \
              patch("codesight_mcp.core.rate_limiting.atomic_write_nofollow", side_effect=OSError("nope")), \
              caplog.at_level(logging.WARNING, logger="codesight_mcp.core.rate_limiting"):
-            result = _rate_limit_state_dir(None)
+            _result = _rate_limit_state_dir(None)
 
         assert any("TM-5" in r.message or "tamper" in r.message.lower() or "pre-created" in r.message.lower()
                     for r in caplog.records), \
@@ -216,7 +212,6 @@ class TestPathspecTimeout:
     def test_safe_pathspec_from_lines_returns_none_on_timeout(self):
         """If compilation takes too long, returns None."""
         from codesight_mcp.discovery import _safe_pathspec_from_lines
-        from unittest.mock import patch
         import pathspec
 
         def slow_from_lines(*args, **kwargs):
@@ -231,7 +226,7 @@ class TestPathspecTimeout:
     def test_safe_pathspec_from_lines_returns_none_on_empty(self):
         """Empty pattern list returns None."""
         from codesight_mcp.discovery import _safe_pathspec_from_lines
-        result = _safe_pathspec_from_lines([])
+        _result = _safe_pathspec_from_lines([])
         # Empty spec or None are both acceptable
         # The important thing is it doesn't raise
 

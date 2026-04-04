@@ -1,6 +1,5 @@
 """Tests for list_repos tool."""
 
-import pytest
 
 from codesight_mcp.tools.list_repos import list_repos
 from codesight_mcp.storage import IndexStore

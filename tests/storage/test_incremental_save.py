@@ -1,6 +1,5 @@
 """Tests for IndexStore.incremental_save merging logic (P1-03)."""
 
-import pytest
 
 from codesight_mcp.storage import IndexStore
 from codesight_mcp.parser import Symbol

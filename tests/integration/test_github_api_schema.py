@@ -4,7 +4,6 @@ Verifies that index_repo degrades gracefully when the GitHub API returns
 unexpected schemas, non-JSON bodies, or HTTP errors.
 """
 
-import asyncio
 from unittest.mock import AsyncMock, patch
 
 import httpx

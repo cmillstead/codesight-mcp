@@ -5,12 +5,6 @@ Scan: docs/plans/2026-03-11-fuzzing-scan.md
 
 import errno
 import gzip
-import json
-import math
-import os
-import tempfile
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 

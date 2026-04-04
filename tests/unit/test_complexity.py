@@ -1,6 +1,5 @@
 """Unit tests for AST complexity extraction."""
 
-import pytest
 from codesight_mcp.parser.complexity import compute_complexity, _BRANCH_NODES
 
 

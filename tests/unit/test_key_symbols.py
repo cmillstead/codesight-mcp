@@ -1,6 +1,5 @@
 """Unit tests for get_key_symbols tool."""
 
-import pytest
 from codesight_mcp.parser import Symbol
 from codesight_mcp.storage import IndexStore
 
@@ -121,7 +120,7 @@ class TestGetKeySymbols:
             return original_get_impact(self, sid, max_depth=max_depth)
 
         with patch.object(CodeGraph, "get_impact", counting_get_impact):
-            result = get_key_symbols(repo="test/repo", storage_path=str(tmp_path))
+            _result = get_key_symbols(repo="test/repo", storage_path=str(tmp_path))
 
         # get_impact should be called at most _MAX_CANDIDATES times
         assert call_count <= _MAX_CANDIDATES

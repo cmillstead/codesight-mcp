@@ -1,11 +1,9 @@
 """Get high-level repository outline."""
 
-import os
 from collections import Counter
 from typing import Optional
 
 from ..core.boundaries import make_meta, wrap_untrusted_content
-from ..core.errors import sanitize_error, RepoNotFoundError
 from ._common import RepoContext, timed, elapsed_ms
 from .registry import ToolSpec, register
 

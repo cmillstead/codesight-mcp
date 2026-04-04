@@ -4,6 +4,7 @@ Extracts the common parse-collect and finalize-save logic so both tools
 share a single implementation.
 """
 
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Iterable
@@ -13,6 +14,8 @@ from ..parser import parse_file, LANGUAGE_EXTENSIONS
 from ..parser.graph import CodeGraph
 from ..storage import IndexStore
 from ..summarizer import summarize_symbols
+
+logger = logging.getLogger(__name__)
 
 
 def parse_source_files(
@@ -49,7 +52,8 @@ def parse_source_files(
                 languages[language] = languages.get(language, 0) + 1
                 raw_files[rel_path] = content
                 parsed_files.append(rel_path)
-        except Exception:
+        except (ValueError, TypeError, KeyError, OSError) as exc:
+            logger.debug("Failed to parse %s: %s", rel_path, exc)
             parse_fail_count += 1
             continue
 

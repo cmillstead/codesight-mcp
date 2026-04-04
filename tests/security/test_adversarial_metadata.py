@@ -1,11 +1,8 @@
 """Tests for untrusted metadata handling — prompt injection prevention."""
 
-import json
-import os
 import tempfile
 from pathlib import Path
 
-import pytest
 
 from codesight_mcp.storage.index_store import IndexStore
 from codesight_mcp.parser.symbols import Symbol

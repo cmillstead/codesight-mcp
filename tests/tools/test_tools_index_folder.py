@@ -1,7 +1,5 @@
 """Functional tests for the index_folder tool (TEST-MED-4)."""
 
-import tempfile
-from pathlib import Path
 
 from codesight_mcp.storage.index_store import IndexStore
 from codesight_mcp.tools.index_folder import index_folder

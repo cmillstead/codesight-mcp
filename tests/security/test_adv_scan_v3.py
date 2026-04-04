@@ -1,9 +1,7 @@
 """Tests for adversarial scan v3 findings (ADV-MED-1, ADV-LOW-1/2/3, ADV-INFO-1/2/3/4)."""
 
-import errno
 import json
 import os
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -43,7 +41,7 @@ class TestAnthropicBaseUrlFrozen:
             with patch("codesight_mcp.summarizer.batch_summarize._ANTHROPIC_BASE_URL",
                         "https://custom.example.com"):
                 with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
-                    summarizer = BatchSummarizer()
+                    _summarizer = BatchSummarizer()
 
         if mock_anthropic_cls.called:
             call_kwargs = mock_anthropic_cls.call_args
@@ -81,7 +79,7 @@ class TestDoubleCloseFD:
             nonlocal content_fd
             content_fd = fd
             fh = original_fdopen(fd, *args, **kwargs)
-            original_write = fh.write
+            _original_write = fh.write
             def bad_write(data):
                 raise IOError("disk full")
             fh.write = bad_write
@@ -237,7 +235,7 @@ class TestRateLimiterTempDirFallback:
         call_count = 0
         created_paths = []
 
-        original_ensure = None
+        _original_ensure = None
 
         def mock_ensure(path):
             nonlocal call_count
@@ -256,7 +254,7 @@ class TestRateLimiterTempDirFallback:
             # Force fallback by making default_dir fail
             with patch("codesight_mcp.core.rate_limiting.Path.home",
                         return_value=Path("/nonexistent")):
-                result = _rate_limit_state_dir(None)
+                _result = _rate_limit_state_dir(None)
 
         # Should have 3 calls: default_dir (OSError), first fallback (PermissionError),
         # second fallback with random suffix (success)

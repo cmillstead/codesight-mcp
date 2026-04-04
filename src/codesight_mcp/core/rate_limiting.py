@@ -19,10 +19,12 @@ _RATE_WINDOW_SECONDS: int = 60
 _MAX_TIMESTAMPS_PER_TOOL: int = _MAX_CALLS_PER_MINUTE * 2
 _MAX_GLOBAL_TIMESTAMPS: int = _MAX_GLOBAL_CALLS_PER_MINUTE * 2
 _MAX_WRITE_FAILURES: int = 10
+_RECOVERY_TIMEOUT_SECONDS: int = 60
 
 # ADV-LOW-7: Protect failure counter with a lock for thread safety
 _write_failure_lock = threading.Lock()
 _consecutive_write_failures: int = 0
+_last_failure_time: float = 0.0
 
 
 def _rate_limit_state_dir(storage_path: str | None) -> Path:
@@ -60,21 +62,32 @@ def _rate_limit_state_dir(storage_path: str | None) -> Path:
 
 def _rate_limit(tool_name: str, storage_path: str | None) -> bool:
     """Check a persistent rate limit bucket. Returns True if allowed."""
-    global _consecutive_write_failures
+    global _consecutive_write_failures, _last_failure_time
 
-    # Fail closed after too many consecutive write failures
+    # Fail closed after too many consecutive write failures,
+    # with recovery attempt after _RECOVERY_TIMEOUT_SECONDS (RC-012).
     with _write_failure_lock:
         if _consecutive_write_failures >= _MAX_WRITE_FAILURES:
-            logging.getLogger(__name__).warning(
-                "Rate limiting fail-closed: %d consecutive write failures",
-                _consecutive_write_failures,
+            elapsed = time.time() - _last_failure_time
+            if elapsed < _RECOVERY_TIMEOUT_SECONDS:
+                logging.getLogger(__name__).warning(
+                    "Rate limiting fail-closed: %d consecutive write failures "
+                    "(recovery in %.0fs)",
+                    _consecutive_write_failures,
+                    _RECOVERY_TIMEOUT_SECONDS - elapsed,
+                )
+                return False
+            # Recovery window reached — allow this call through as a probe.
+            # The write attempt below will either clear failures or re-arm.
+            logging.getLogger(__name__).info(
+                "Rate limiter attempting recovery after %.0fs timeout", elapsed
             )
-            return False
 
     state_dir = _rate_limit_state_dir(storage_path)
     if state_dir is None:
         with _write_failure_lock:
             _consecutive_write_failures += 1
+            _last_failure_time = time.time()
             if _consecutive_write_failures >= _MAX_WRITE_FAILURES:
                 logging.getLogger(__name__).warning(
                     "Rate limiting fail-closed: unable to create state directory after %d failures",
@@ -153,8 +166,10 @@ def _rate_limit(tool_name: str, storage_path: str | None) -> bool:
             atomic_write_nofollow(state_path, json.dumps(state))
             with _write_failure_lock:
                 _consecutive_write_failures = 0  # Reset on successful write
+                _last_failure_time = 0.0
         except OSError as exc:
             with _write_failure_lock:
                 _consecutive_write_failures += 1
+                _last_failure_time = time.time()
             logging.getLogger(__name__).warning("Failed to persist rate limit state: %s", exc)
         return True

@@ -1,9 +1,5 @@
 """Functional tests for the invalidate_cache tool."""
 
-import json
-import tempfile
-from pathlib import Path
-import pytest
 from codesight_mcp.storage.index_store import IndexStore
 from codesight_mcp.tools.invalidate_cache import invalidate_cache
 

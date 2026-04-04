@@ -6,7 +6,7 @@ from typing import Optional
 from ..core.boundaries import make_meta, wrap_untrusted_content
 from ..parser.graph import CodeGraph
 from ..security import sanitize_signature_for_api
-from ._common import RepoContext, prepare_graph_query, timed, elapsed_ms
+from ._common import RepoContext, timed, elapsed_ms
 from .registry import ToolSpec, register
 
 

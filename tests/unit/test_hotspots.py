@@ -1,6 +1,5 @@
 """Unit tests for analyze_complexity tool."""
 
-import pytest
 from codesight_mcp.parser import Symbol
 from codesight_mcp.storage import IndexStore
 

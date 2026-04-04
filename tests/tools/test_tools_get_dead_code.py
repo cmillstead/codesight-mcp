@@ -2,7 +2,6 @@
 
 import hashlib
 
-import pytest
 
 from codesight_mcp.tools.get_dead_code import (
     get_dead_code,

@@ -2,7 +2,6 @@
 
 import hashlib
 
-import pytest
 
 from codesight_mcp.tools.get_dependencies import get_dependencies
 from codesight_mcp.storage import IndexStore

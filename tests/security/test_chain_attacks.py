@@ -4,13 +4,8 @@ Tests that verify security properties hold across multiple layers,
 not just within individual functions.
 """
 
-import gzip
 import json
-import os
-import tempfile
-from pathlib import Path
 
-import pytest
 
 from codesight_mcp.security import sanitize_signature_for_api
 from codesight_mcp.storage.index_store import IndexStore

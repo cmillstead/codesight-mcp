@@ -4,7 +4,6 @@ from typing import Optional
 
 from ..core.limits import MAX_SEARCH_RESULTS
 from ..core.boundaries import make_meta, wrap_untrusted_content
-from ..core.errors import sanitize_error, RepoNotFoundError
 from ..parser.extractor import SUPPORTED_LANGUAGES
 from ..security import sanitize_signature_for_api
 from ._common import RepoContext, timed, elapsed_ms, calculate_symbol_score

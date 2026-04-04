@@ -712,7 +712,7 @@ class TestSanitizeSignatureDELBypass:
         """sk_live_ with DEL inserted must still be redacted after stripping."""
         # DEL between prefix and suffix breaks _INLINE_SECRET_RE without the strip step
         sig = "sk_live_\x7f" + "a" * 23
-        result = sanitize_signature_for_api(sig)
+        _result = sanitize_signature_for_api(sig)
         # After stripping 0x7F, the token becomes sk_live_ + 23 chars = 32 chars total
         # _INLINE_SECRET_RE requires sk_live_[a-zA-Z0-9]{24,} so 23 chars is short.
         # Use 24 chars after DEL to meet the minimum.

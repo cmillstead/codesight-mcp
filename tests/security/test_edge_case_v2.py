@@ -2,17 +2,14 @@
 
 import os
 import threading
-import tempfile
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from codesight_mcp.core.locking import ensure_private_dir, _UMASK_LOCK
-from codesight_mcp.storage.index_store import IndexStore, _makedirs_0o700
+from codesight_mcp.storage.index_store import IndexStore
 from codesight_mcp.parser.symbols import Symbol
 from codesight_mcp.security import sanitize_signature_for_api
-from codesight_mcp.core.validation import ValidationError
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +224,8 @@ class TestLoadIndexSanitizesNameAndFile:
         )
 
         # Tamper with the index to inject a secret in the name field
-        import gzip, json
+        import gzip
+        import json
         index_path = tmp_path / "test__repo.json.gz"
         raw = gzip.decompress(index_path.read_bytes())
         data = json.loads(raw.decode("utf-8"))

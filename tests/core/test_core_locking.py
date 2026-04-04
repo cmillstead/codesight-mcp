@@ -94,7 +94,8 @@ class TestAtomicWriteNofollow:
         assert tmp_files == []
 
     def test_symlink_target_rejected(self, tmp_path):
-        import os, threading
+        import os
+        import threading
         real = tmp_path / "real.txt"
         real.write_text("original")
         link = tmp_path / "link.txt"

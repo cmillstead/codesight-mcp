@@ -7,7 +7,6 @@ advisory locks (fcntl.LOCK_EX) and that no data corruption occurs.
 import threading
 import time
 
-import pytest
 
 from codesight_mcp.parser import Symbol
 from codesight_mcp.storage import IndexStore

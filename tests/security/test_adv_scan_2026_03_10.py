@@ -5,11 +5,7 @@ and ADV-INFO-1.
 """
 
 import os
-import re
-import threading
-from datetime import timezone
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -384,5 +380,5 @@ class TestCleanupStaleTemps:
         old_time = time.time() - 120
         os.utime(stale, (old_time, old_time))
 
-        store = IndexStore(base_path=str(tmp_path))
+        _store = IndexStore(base_path=str(tmp_path))
         assert not stale.exists()

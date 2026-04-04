@@ -8,7 +8,6 @@ constraints (spotlighting, redaction-sentinel guard, _no_redact gate) hold.
 import tempfile
 from unittest.mock import patch
 
-import pytest
 
 import codesight_mcp.security as security_mod
 from codesight_mcp.storage import IndexStore

@@ -1,6 +1,5 @@
 """Unit tests for get_diagram tool."""
 
-import pytest
 from codesight_mcp.parser import Symbol
 from codesight_mcp.storage import IndexStore
 
@@ -142,7 +141,7 @@ class TestImpactDiagram:
 
     def test_impact_diagram_no_self_loops(self, tmp_path):
         """Impact diagram should connect predecessor to current, not self-loops."""
-        from codesight_mcp.tools.get_diagram import get_diagram, _render_impact
+        from codesight_mcp.tools.get_diagram import _render_impact
         from codesight_mcp.parser.graph import CodeGraph
 
         # A -> B -> C (call chain); impact of C should show B->C and A->B edges

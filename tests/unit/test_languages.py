@@ -1,6 +1,5 @@
 """Tests for language-specific parsing."""
 
-import pytest
 from codesight_mcp.parser import parse_file
 
 

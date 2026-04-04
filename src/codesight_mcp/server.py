@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -276,12 +277,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     try:
         storage_path = _validate_storage_path(_CODE_INDEX_PATH or None)
-    except Exception as e:
+    except (OSError, ValueError) as e:
         return [TextContent(type="text", text=json.dumps({"error": sanitize_error(e)}))]
 
     try:
         rate_ok = _rate_limit(name, storage_path)
     except Exception:
+        # RC-011: Intentionally broad — rate limiter must not crash the server.
         rate_ok = False  # Fail closed if rate limiter is broken
     if not rate_ok:
         return [TextContent(type="text", text=json.dumps({
@@ -312,6 +314,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text=text)]
 
     except Exception as e:
+        # RC-011: Intentionally broad — outer error boundary for all tool handlers.
+        # Ensures MCP protocol always returns a valid error response.
         error_msg = sanitize_error(e)
         return [TextContent(type="text", text=json.dumps({"error": error_msg}))]
 
@@ -329,7 +333,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     argument_keys=sorted(arguments.keys()),
                 ))
             except Exception:
-                pass  # Never break dispatch
+                # RC-011: Intentionally broad — usage logging must never
+                # crash the server or prevent tool response delivery.
+                pass
 
 
 async def run_server():
@@ -466,7 +472,7 @@ def _run_cli_tool(tool_name: str, argv: list[str]) -> None:
 
     try:
         storage_path = _validate_storage_path(_CODE_INDEX_PATH or None)
-    except Exception as e:
+    except (OSError, ValueError) as e:
         print(json.dumps({"error": sanitize_error(e)}))
         sys.exit(1)
 
@@ -501,6 +507,7 @@ def _run_cli_tool(tool_name: str, argv: list[str]) -> None:
         print(json.dumps(result, indent=2))
         sys.exit(0 if success else 1)
     except Exception as e:
+        # RC-011: Intentionally broad — outer error boundary for CLI tool dispatch.
         error_msg = sanitize_error(e)
         print(json.dumps({"error": error_msg}))
         sys.exit(1)
@@ -518,13 +525,52 @@ def _run_cli_tool(tool_name: str, argv: list[str]) -> None:
                     argument_keys=sorted(arguments.keys()),
                 ))
             except Exception:
-                pass  # Never break CLI dispatch
+                # RC-011: Intentionally broad — usage logging must never
+                # prevent CLI exit or mask the tool's actual result.
+                pass
         # Clear active signal — verify not a symlink before removing
         try:
             if not os.path.islink(_active_file):
                 os.unlink(_active_file)
         except OSError:
             pass
+
+
+def _configure_logging() -> None:
+    """Configure structured logging with CODESIGHT_LOG_LEVEL support.
+
+    CODESIGHT_LOG_LEVEL takes precedence over LOG_LEVEL.
+    CODESIGHT_LOG_LEVEL allows DEBUG/INFO (operator explicitly opted in).
+    LOG_LEVEL is restricted to WARNING/ERROR/CRITICAL (ADV-LOW-10).
+    """
+    # ADV-LOW-10: Restrict LOG_LEVEL to safe values — DEBUG/INFO leak internals.
+    # CODESIGHT_LOG_LEVEL explicitly unlocks DEBUG/INFO for operators who opt in.
+    _SAFE_LOG_LEVELS = {"WARNING", "ERROR", "CRITICAL"}
+    _ALL_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+
+    _codesight_explicit = bool(os.environ.get("CODESIGHT_LOG_LEVEL", ""))
+    _log_level = (
+        os.environ.get("CODESIGHT_LOG_LEVEL", "").upper()
+        or os.environ.get("LOG_LEVEL", "WARNING").upper()
+    )
+    _allowed = _ALL_LOG_LEVELS if _codesight_explicit else _SAFE_LOG_LEVELS
+    if _log_level not in _allowed:
+        _log_level = "WARNING"
+
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    ))
+    root_logger = logging.getLogger()
+    # Clear ALL existing handlers before adding ours.
+    # This ensures:
+    # (a) Idempotency — repeated calls don't accumulate handlers
+    # (b) No stdout leakage — pre-existing stdout handlers are removed
+    # (c) Only our stderr handler remains
+    root_logger.handlers.clear()
+    root_logger.setLevel(getattr(logging, _log_level, logging.WARNING))
+    root_logger.addHandler(handler)
 
 
 def main():
@@ -544,15 +590,7 @@ def main():
     """
     import sys
 
-    # ADV-LOW-10: Restrict LOG_LEVEL to safe values — DEBUG/INFO leak internals.
-    _ALLOWED_LOG_LEVELS = {"WARNING", "ERROR", "CRITICAL"}
-    _log_level = os.environ.get("LOG_LEVEL", "WARNING").upper()
-    if _log_level not in _ALLOWED_LOG_LEVELS:
-        _log_level = "WARNING"
-    logging.basicConfig(
-        level=getattr(logging, _log_level, logging.WARNING),
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    _configure_logging()
 
     from .tools.index_folder import index_folder as _index_folder
     from .tools.index_repo import index_repo as _index_repo
@@ -590,6 +628,7 @@ def main():
         try:
             result = _index_folder(path, use_ai_summaries=use_ai, storage_path=storage_path, allowed_roots=allowed)
         except Exception as exc:
+            # RC-011: Intentionally broad — CLI entry point error boundary.
             print(json.dumps({"error": sanitize_error(exc)}))
             sys.exit(1)
         print(json.dumps(result, indent=2))
@@ -608,6 +647,7 @@ def main():
         try:
             result = asyncio.run(_index_repo(url, use_ai_summaries=use_ai, storage_path=storage_path))
         except Exception as exc:
+            # RC-011: Intentionally broad — CLI entry point error boundary.
             print(json.dumps({"error": sanitize_error(exc)}))
             sys.exit(1)
         print(json.dumps(result, indent=2))

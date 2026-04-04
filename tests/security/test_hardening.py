@@ -1,11 +1,10 @@
 """Comprehensive hardening tests for codesight-mcp parser."""
 
-import json
 from pathlib import Path
 
 import pytest
 
-from codesight_mcp.parser import parse_file, Symbol, make_symbol_id, compute_content_hash
+from codesight_mcp.parser import parse_file, Symbol, compute_content_hash
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from codesight_mcp.discovery import discover_local_files
-from codesight_mcp.core.limits import MAX_DIRECTORY_DEPTH
 
 
 class TestDiscoveryDepthLimit:
@@ -65,7 +64,6 @@ class TestGitignoreReDoSProtection:
 
     def test_long_gitignore_pattern_skipped(self, tmp_path):
         """A .gitignore with a 500-char pattern must be skipped; discover completes without error."""
-        import sys
         # Write a .gitignore with a pattern that is 500 characters long
         long_pattern = "a" * 500
         assert len(long_pattern) > 200
