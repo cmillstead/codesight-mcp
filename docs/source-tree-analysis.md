@@ -61,7 +61,7 @@ codesight-mcp/
 │       ├── get_key_symbols.py  # PageRank-based structural importance ranking
 │       ├── get_diagram.py      # Mermaid diagram generation (call_graph, hierarchy, imports, impact)
 │       └── get_dead_code.py    # Unused symbol detection (zero callers)
-├── tests/                      # Test suite (80 files, 1,558 tests)
+├── tests/                      # Test suite (1,818 tests)
 │   ├── conftest.py             # Shared fixtures (tmp_index_store, python_index)
 │   ├── core/                   # Core infrastructure tests (85 tests)
 │   │   ├── test_core_boundaries.py

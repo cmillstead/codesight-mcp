@@ -247,14 +247,15 @@ graph LR
 
 | Category | Tests | Coverage Focus |
 |----------|-------|----------------|
-| Security/Adversarial | 630 (39%) | Path traversal, injection, chaos testing, real filesystem |
-| Unit (Parser/Analysis) | 421 (26%) | AST extraction, graph algorithms, complexity metrics |
-| Tools | 307 (19%) | Each tool's input validation, output format, edge cases |
-| Core Infrastructure | 113 (7%) | Validation chain, rate limiting, locking, error handling |
-| Server/Registry | 113 (7%) | Dispatch, sanitization, tool registration |
-| Storage | 18 (1%) | Index read/write, gzip, incremental updates |
-| Integration | 16 (1%) | Full pipeline: index → query → verify |
-| **Total** | **1,618** | |
+| Security/Adversarial | 564 (31%) | Path traversal, injection, chaos testing, real filesystem |
+| Unit (Parser/Analysis) | 386 (21%) | AST extraction, graph algorithms, complexity metrics |
+| Tools | 356 (20%) | Each tool's input validation, output format, edge cases |
+| Storage | 166 (9%) | Index read/write, gzip, incremental updates, LRU cache |
+| Core Infrastructure | 132 (7%) | Validation chain, rate limiting, locking, error handling |
+| Server/Registry | 109 (6%) | Dispatch, sanitization, tool registration, structured logging |
+| Integration | 67 (4%) | Full pipeline: index → query → verify |
+| Stress/Fuzz/Benchmark | 33 (2%) | Load testing, fuzzing, performance benchmarks |
+| **Total** | **1,818** | |
 
 Testing philosophy: security tests use real filesystems with no mocking, adversarial tests attempt to break security boundaries.
 

@@ -9,7 +9,7 @@
   </a>
   <img src="https://img.shields.io/badge/MCP-Compatible-green?style=flat-square" alt="MCP Compatible">
   <img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square&logo=python" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/tests-1618-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1818-brightgreen?style=flat-square" alt="Tests">
 </p>
 
 An **MCP server** that indexes local and GitHub codebases via tree-sitter AST parsing, then exposes 28 tools for symbol retrieval, code graph traversal, and impact analysis — all with byte-offset precision to cut token costs by ~99% compared to sending full files. Supports 15 languages.
@@ -51,7 +51,7 @@ Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gra
 - **6-step path validation chain** — null bytes, traversal, limits, resolution, containment, symlinks
 - **Content boundary markers** — indirect prompt injection defense (Microsoft spotlighting research)
 - **Error sanitization** — raw exceptions never reach the AI; system paths are always stripped
-- **1,618 tests** — adversarial, security, integration, benchmark, fuzz, and stress coverage with real temp directories
+- **1,818 tests** — adversarial, security, integration, benchmark, fuzz, and stress coverage with real temp directories
 
 ---
 
@@ -357,7 +357,7 @@ codesight-mcp treats the connected AI as an untrusted principal. Every tool argu
 | **Prompt injection defense** | Nonce-based delimiters for AI summarization, injection phrase blocklist, kind-validated prompt interpolation |
 | **Graph traversal limits** | BFS call-chain search capped at 5 paths and depth 50 to prevent resource exhaustion |
 
-See [SECURITY.md](SECURITY.md) for the full threat model, defense matrix, and validation chain details.
+See [SECURITY.md](SECURITY.md) for the full threat model, defense matrix, and validation chain details. Architecture Decision Records for key security decisions are in [docs/decisions/](docs/decisions/).
 
 ---
 
@@ -380,6 +380,8 @@ When `ANTHROPIC_API_KEY` is set, codesight-mcp sends function and class signatur
 | `CODESIGHT_USAGE_LOG` | File path for persistent JSONL usage log. Without this, usage records are in-memory only (lost on restart). |
 | `CODESIGHT_USAGE_ENABLED` | Set to `0` to disable usage logging. Default: `1` (enabled). |
 | `CODESIGHT_USAGE_MAX_MEMORY` | Maximum number of in-memory usage records before eviction. Default: `10000`. |
+| `CODESIGHT_LOG_LEVEL` | Log verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. All levels allowed. Default: `WARNING`. Takes precedence over `LOG_LEVEL`. |
+| `LOG_LEVEL` | Fallback log level. Restricted to `WARNING`/`ERROR`/`CRITICAL` for security (ADV-LOW-10). Use `CODESIGHT_LOG_LEVEL` to unlock `DEBUG`/`INFO`. |
 
 ---
 
