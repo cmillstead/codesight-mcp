@@ -51,6 +51,15 @@ def invalidate_cache(
     if deleted:
         # Clear the in-memory graph cache so stale graphs aren't reused
         CodeGraph.clear_cache()
+        # Also remove embedding sidecar so stale vectors don't survive
+        try:
+            from ..embeddings.store import EmbeddingStore
+            embed_store = EmbeddingStore(owner, name, storage_path)
+            sidecar = embed_store._path
+            if sidecar.exists():
+                sidecar.unlink()
+        except Exception:
+            pass  # best-effort — don't fail cache invalidation for embedding cleanup
         return {
             "success": True,
             "repo": f"{owner}/{name}",

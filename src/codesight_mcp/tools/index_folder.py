@@ -295,6 +295,24 @@ def index_folder(
 
                 if updated:
                     CodeGraph.clear_cache()
+
+                    # Best-effort: invalidate embeddings for symbols from changed/deleted files.
+                    # Uses prev_index (pre-update) to catch renamed/removed symbols.
+                    if prev_index and (changed_files or deleted_files):
+                        try:
+                            from ..embeddings.store import EmbeddingStore
+
+                            embed_store = EmbeddingStore(owner, repo_name, storage_path)
+                            touched_files = set(changed_files) | set(deleted_files)
+                            stale_ids = [
+                                sym["id"] for sym in prev_index.symbols if sym.get("file") in touched_files
+                            ]
+                            if stale_ids:
+                                embed_store.invalidate(stale_ids)
+                                embed_store.save()
+                        except Exception as exc:  # RC-011: best-effort — never break indexing
+                            logger.warning("Failed to invalidate embeddings: %s", exc)
+
                     result: dict = {
                         "success": True,
                         "repo": f"{owner}/{repo_name}",
