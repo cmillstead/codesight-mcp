@@ -101,6 +101,10 @@ def finalize_index(
 
     # Save index
     store = IndexStore(base_path=storage_path)
+
+    # Load previous index to identify stale embedding IDs before overwriting
+    prev_index = store.load_index(owner, name)
+
     store.save_index(
         owner=owner,
         name=name,
@@ -110,6 +114,36 @@ def finalize_index(
         languages=languages,
         git_head=git_head,
     )
+
+    # Best-effort: invalidate embeddings for symbols that changed or were removed
+    if prev_index:
+        try:
+            from ..embeddings.store import EmbeddingStore
+
+            # Build lookup of new symbols by ID for comparison
+            new_by_id = {}
+            for sym in all_symbols:
+                sid = sym.id if hasattr(sym, "id") else sym.get("id")
+                if sid:
+                    s_summary = sym.summary if hasattr(sym, "summary") else sym.get("summary", "")
+                    s_sig = sym.signature if hasattr(sym, "signature") else sym.get("signature", "")
+                    new_by_id[sid] = (s_summary, s_sig)
+
+            # Invalidate: removed symbols + symbols whose summary/signature changed
+            stale_ids = []
+            for sym in prev_index.symbols:
+                sid = sym.get("id")
+                if sid not in new_by_id:
+                    stale_ids.append(sid)  # removed
+                elif (sym.get("summary", ""), sym.get("signature", "")) != new_by_id[sid]:
+                    stale_ids.append(sid)  # content changed
+
+            if stale_ids:
+                embed_store = EmbeddingStore(owner, name, storage_path)
+                embed_store.invalidate(stale_ids)
+                embed_store.save()
+        except Exception as exc:  # RC-011: best-effort — never break indexing
+            logger.warning("Failed to invalidate embeddings on full reindex: %s", exc)
 
     # Clear the in-memory graph cache so stale graphs aren't reused
     CodeGraph.clear_cache()

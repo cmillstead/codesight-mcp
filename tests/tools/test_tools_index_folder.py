@@ -1,5 +1,6 @@
 """Functional tests for the index_folder tool (TEST-MED-4)."""
 
+import pytest
 
 from codesight_mcp.storage.index_store import IndexStore
 from codesight_mcp.tools.index_folder import index_folder
@@ -181,3 +182,207 @@ class TestStorageKeyCollision:
         assert result_a["repo"] in repo_keys, f"{result_a['repo']!r} not in {repo_keys}"
         assert result_b["repo"] in repo_keys, f"{result_b['repo']!r} not in {repo_keys}"
         assert result_a["repo"] != result_b["repo"], "Repo keys must be distinct"
+
+
+class TestEmbeddingInvalidation:
+    """Embedding sidecar invalidation during incremental and full reindexing."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_read_only_env(self):
+        """Ensure CODESIGHT_READ_ONLY is not set — CLI dispatch tests may leak it."""
+        import os
+        old = os.environ.pop("CODESIGHT_READ_ONLY", None)  # mock-ok: env var cleanup for test isolation
+        yield
+        if old is not None:
+            os.environ["CODESIGHT_READ_ONLY"] = old
+        else:
+            os.environ.pop("CODESIGHT_READ_ONLY", None)
+
+    @staticmethod
+    def _init_git_repo(folder):
+        """Initialize a git repo and commit all files in *folder*."""
+        import subprocess
+
+        subprocess.run(["git", "init"], cwd=str(folder), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(folder), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=str(folder), capture_output=True, check=True)
+        subprocess.run(["git", "add", "."], cwd=str(folder), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(folder), capture_output=True, check=True)
+
+    @staticmethod
+    def _commit_all(folder, msg="update"):
+        import subprocess
+
+        subprocess.run(["git", "add", "."], cwd=str(folder), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", msg], cwd=str(folder), capture_output=True, check=True)
+
+    @staticmethod
+    def _populate_embeddings(owner, name, storage_path, symbol_ids):
+        """Create an EmbeddingStore sidecar with fake vectors for *symbol_ids*."""
+        from codesight_mcp.embeddings.store import EmbeddingStore
+
+        embed_store = EmbeddingStore(owner, name, storage_path)
+        embed_store.model = "test-model"
+        embed_store.dimensions = 3
+        for sid in symbol_ids:
+            embed_store.set(sid, [1.0, 2.0, 3.0])
+        embed_store.save()
+
+    @staticmethod
+    def _load_embedding_ids(owner, name, storage_path):
+        """Load the EmbeddingStore and return the set of stored symbol IDs."""
+        from codesight_mcp.embeddings.store import EmbeddingStore
+
+        embed_store = EmbeddingStore(owner, name, storage_path)
+        embed_store.load()
+        return set(embed_store._vectors.keys())
+
+    def test_incremental_reindex_invalidates_changed_file_embeddings(self, tmp_path):
+        """Modifying a file during incremental reindex invalidates its symbol embeddings."""
+        src_dir = tmp_path / "project"
+        src_dir.mkdir()
+        storage = str(tmp_path / "_storage")
+
+        (src_dir / "file_a.py").write_text("def sym_a():\n    return 1\n")
+        (src_dir / "file_b.py").write_text("def sym_b():\n    return 2\n")
+        self._init_git_repo(src_dir)
+
+        # First index
+        result1 = index_folder(
+            path=str(src_dir), use_ai_summaries=False,
+            storage_path=storage, allowed_roots=[str(tmp_path)],
+        )
+        assert result1.get("success") is True
+
+        # Extract owner/name and load symbols to get IDs
+        owner, name = result1["repo"].split("/", 1)
+        store = IndexStore(base_path=storage)
+        idx = store.load_index(owner, name)
+        assert idx is not None
+
+        sym_ids_by_file = {}
+        for sym in idx.symbols:
+            f = sym.get("file", "")
+            sym_ids_by_file.setdefault(f, []).append(sym["id"])
+
+        all_ids = [sym["id"] for sym in idx.symbols]
+        self._populate_embeddings(owner, name, storage, all_ids)
+
+        # Modify file_a.py and commit
+        (src_dir / "file_a.py").write_text("def sym_a():\n    return 999\n")
+        self._commit_all(src_dir, "modify file_a")
+
+        # Incremental reindex
+        result2 = index_folder(
+            path=str(src_dir), use_ai_summaries=False,
+            storage_path=storage, allowed_roots=[str(tmp_path)],
+        )
+        assert result2.get("success") is True
+        assert result2.get("incremental") is True
+
+        # Verify: file_a's old embeddings gone, file_b's remain
+        remaining = self._load_embedding_ids(owner, name, storage)
+        for sid in sym_ids_by_file.get("file_a.py", []):
+            assert sid not in remaining, f"Stale embedding {sid} from file_a.py should be invalidated"
+        for sid in sym_ids_by_file.get("file_b.py", []):
+            assert sid in remaining, f"Embedding {sid} from file_b.py should still exist"
+
+    def test_incremental_reindex_invalidates_deleted_file_embeddings(self, tmp_path):
+        """Deleting a file during incremental reindex invalidates its symbol embeddings."""
+        src_dir = tmp_path / "project"
+        src_dir.mkdir()
+        storage = str(tmp_path / "_storage")
+
+        (src_dir / "file_a.py").write_text("def sym_a():\n    return 1\n")
+        (src_dir / "file_b.py").write_text("def sym_b():\n    return 2\n")
+        self._init_git_repo(src_dir)
+
+        # First index
+        result1 = index_folder(
+            path=str(src_dir), use_ai_summaries=False,
+            storage_path=storage, allowed_roots=[str(tmp_path)],
+        )
+        assert result1.get("success") is True
+
+        owner, name = result1["repo"].split("/", 1)
+        store = IndexStore(base_path=storage)
+        idx = store.load_index(owner, name)
+        assert idx is not None
+
+        sym_ids_by_file = {}
+        for sym in idx.symbols:
+            f = sym.get("file", "")
+            sym_ids_by_file.setdefault(f, []).append(sym["id"])
+
+        all_ids = [sym["id"] for sym in idx.symbols]
+        self._populate_embeddings(owner, name, storage, all_ids)
+
+        # Delete file_a.py and commit
+        (src_dir / "file_a.py").unlink()
+        self._commit_all(src_dir, "delete file_a")
+
+        # Incremental reindex
+        result2 = index_folder(
+            path=str(src_dir), use_ai_summaries=False,
+            storage_path=storage, allowed_roots=[str(tmp_path)],
+        )
+        assert result2.get("success") is True
+        assert result2.get("incremental") is True
+
+        # Verify: file_a's embeddings gone, file_b's remain
+        remaining = self._load_embedding_ids(owner, name, storage)
+        for sid in sym_ids_by_file.get("file_a.py", []):
+            assert sid not in remaining, f"Stale embedding {sid} from deleted file_a.py should be invalidated"
+        for sid in sym_ids_by_file.get("file_b.py", []):
+            assert sid in remaining, f"Embedding {sid} from file_b.py should still exist"
+
+    def test_full_reindex_invalidates_changed_embeddings(self, tmp_path):
+        """A full reindex invalidates changed/removed symbols but preserves unchanged ones."""
+        src_dir = tmp_path / "project"
+        src_dir.mkdir()
+        storage = str(tmp_path / "_storage")
+
+        (src_dir / "file_a.py").write_text("def sym_a():\n    return 1\n")
+        (src_dir / "file_b.py").write_text("def sym_b():\n    return 2\n")
+
+        # First index (no git — forces full reindex path)
+        result1 = index_folder(
+            path=str(src_dir), use_ai_summaries=False,
+            storage_path=storage, allowed_roots=[str(tmp_path)],
+        )
+        assert result1.get("success") is True
+
+        owner, name = result1["repo"].split("/", 1)
+        store = IndexStore(base_path=storage)
+        idx = store.load_index(owner, name)
+        assert idx is not None
+
+        # Separate symbol IDs by file
+        ids_a = [s["id"] for s in idx.symbols if s.get("file", "").endswith("file_a.py")]
+        ids_b = [s["id"] for s in idx.symbols if s.get("file", "").endswith("file_b.py")]
+        all_ids = ids_a + ids_b
+        assert len(ids_a) > 0
+        assert len(ids_b) > 0
+        self._populate_embeddings(owner, name, storage, all_ids)
+
+        # Verify embeddings exist before reindex
+        before = self._load_embedding_ids(owner, name, storage)
+        assert len(before) == len(all_ids)
+
+        # Change file_a (different signature), leave file_b unchanged
+        (src_dir / "file_a.py").write_text("def sym_a(x):\n    return x + 1\n")
+
+        # Full reindex (still no git — goes through finalize_index)
+        result2 = index_folder(
+            path=str(src_dir), use_ai_summaries=False,
+            storage_path=storage, allowed_roots=[str(tmp_path)],
+        )
+        assert result2.get("success") is True
+        assert "incremental" not in result2  # full reindex, not incremental
+
+        # Verify: file_a's embeddings invalidated (signature changed), file_b's preserved
+        remaining = self._load_embedding_ids(owner, name, storage)
+        for sid in ids_a:
+            assert sid not in remaining, f"Embedding {sid} from changed file_a.py should be invalidated"
+        for sid in ids_b:
+            assert sid in remaining, f"Embedding {sid} from unchanged file_b.py should survive"

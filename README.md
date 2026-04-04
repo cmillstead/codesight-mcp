@@ -27,6 +27,7 @@ Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gra
 - [Code Graph & Relationship Analysis](#code-graph--relationship-analysis)
 - [Security Model](#security-model)
 - [Git Hooks](#git-hooks-auto-reindex-on-commit-and-push)
+- [Semantic Search](#semantic-search)
 - [Environment Variables](#environment-variables)
 
 ---
@@ -382,6 +383,48 @@ When `ANTHROPIC_API_KEY` is set, codesight-mcp sends function and class signatur
 | `CODESIGHT_USAGE_MAX_MEMORY` | Maximum number of in-memory usage records before eviction. Default: `10000`. |
 | `CODESIGHT_LOG_LEVEL` | Log verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. All levels allowed. Default: `WARNING`. Takes precedence over `LOG_LEVEL`. |
 | `LOG_LEVEL` | Fallback log level. Restricted to `WARNING`/`ERROR`/`CRITICAL` for security (ADV-LOW-10). Use `CODESIGHT_LOG_LEVEL` to unlock `DEBUG`/`INFO`. |
+
+---
+
+## Semantic Search
+
+Search by intent instead of exact names. Requires the `semantic` extra:
+
+```bash
+pip install codesight-mcp[semantic]   # adds fastembed (~100MB ONNX runtime + model weights)
+```
+
+Without this extra, passing semantic params returns a helpful error explaining what to install.
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `semantic` | bool | Hybrid keyword+semantic scoring (default weight: 0.7 semantic, 0.3 keyword) |
+| `semantic_only` | bool | Pure semantic scoring, skips keyword matching entirely |
+| `semantic_weight` | float | Blend ratio from 0.0 (keyword only) to 1.0 (semantic only) |
+
+### Examples
+
+```python
+# Find by intent, not exact name
+search_symbols(query="the function that validates credentials", semantic=True)
+
+# Pure semantic search
+search_symbols(query="password hashing utility", semantic_only=True)
+```
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `CODESIGHT_EMBED_PROVIDER` | Explicit provider selection (default: auto-detect) |
+| `CODESIGHT_EMBED_MODEL` | Model override (default: `BAAI/bge-small-en-v1.5`) |
+| `CODESIGHT_NO_SEMANTIC` | Set to `1` to disable semantic features entirely |
+
+### How It Works
+
+Embeddings are generated lazily on the first semantic query and cached in gzip-JSON sidecar files alongside the index. The cache is invalidated automatically on reindex. The default provider runs entirely on-device with no API calls. When `semantic=false` (the default), there is zero overhead -- embeddings are never loaded or computed.
 
 ---
 
