@@ -28,6 +28,57 @@ LANGUAGE_SMOKE_CASES = [
     ("kotlin", ".kt", "fun hello() {}", "function"),
     ("dart", ".dart", "void hello() {}", "function"),
     ("perl", ".pl", "sub hello {}", "function"),
+    ("css", ".css", ".container { color: red; }", "class"),
+    ("scss", ".scss", "$primary: blue;", "constant"),
+    ("html", ".html", "<html><body>hi</body></html>", "class"),
+    ("xml", ".xml", "<root><child/></root>", "class"),
+    ("yaml", ".yaml", "key: value", "constant"),
+    ("json", ".json", '{"key": "value"}', "constant"),
+    ("toml", ".toml", 'name = "val"', "constant"),
+    ("make", ".mk", "all: main.o\n\tgcc -o all main.o", "function"),
+    ("lua", ".lua", "function hello() end", "function"),
+    ("bash", ".sh", "hello() { echo hi; }", "function"),
+    ("scala", ".scala", "object Hello { def greet(): Unit = {} }", "class"),
+    ("r", ".r", "hello <- function() {}", "function"),
+    ("elixir", ".ex", "defmodule Hello do\nend", "class"),
+    ("julia", ".jl", "function hello() end", "function"),
+    ("clojure", ".clj", "(defn hello [] nil)", "function"),
+    ("nim", ".nim", "proc hello() = discard", "function"),
+    ("haskell", ".hs", "data Color = Red | Green | Blue", "class"),
+    ("erlang", ".erl", "-module(hello).\nhello() -> ok.", "function"),
+    ("zig", ".zig", "pub fn hello() void {}", "function"),
+    ("d", ".d", "void hello() {}", "function"),
+    ("objc", ".mm", "@interface Hello @end\n@implementation Hello @end", "class"),
+    ("ocaml", ".ml", "let hello = 1", "function"),
+    ("fsharp", ".fs", "type Color = Red | Green | Blue", "type"),
+    ("elm", ".elm", "hello = 1", "function"),
+    ("sql", ".sql", "CREATE TABLE hello (id INT);", "class"),
+    ("powershell", ".ps1", "function Hello { }", "function"),
+    ("solidity", ".sol", "contract Hello { }", "class"),
+    ("hcl", ".tf", 'resource "aws_instance" "hello" {}', "class"),
+    ("proto", ".proto", "message Hello {}", "class"),
+    ("graphql", ".graphql", "type Hello { id: ID! }", "class"),
+    ("fortran", ".f90", "program hello\nend program", "class"),
+    ("cmake", ".cmake", "function(my_func)\nendfunction()", "function"),
+    ("matlab", ".m", "function result = compute(x)\n  result = x * 2;\nend", "function"),
+    ("cuda", ".cu", "void hello() {}", "function"),
+    ("v", ".vv", "fn hello() {}", "function"),
+    ("gleam", ".gleam", "pub fn hello() {}", "function"),
+    ("odin", ".odin", "package main\nhello :: proc() {}", "function"),
+    ("gdscript", ".gd", "func hello():\n  pass", "function"),
+    ("verilog", ".sv", "module counter(input clk);\nendmodule", "class"),
+    ("vhdl", ".vhd", "entity counter is\nend entity;", "class"),
+    ("ada", ".adb", "procedure Hello is\nbegin\n  null;\nend Hello;", "function"),
+    ("pascal", ".pas", "program Hello;\nbegin\nend.", "class"),
+    ("commonlisp", ".lisp", "(defun hello (x) (+ x 1))", "function"),
+    ("scheme", ".scm", "(define (hello x) (+ x 1))", "function"),
+    ("racket", ".rkt", "(define (hello x) (+ x 1))", "function"),
+    ("tcl", ".tcl", "proc hello {name} { puts $name }", "function"),
+    ("dockerfile", ".dockerfile", "FROM ubuntu:22.04", "class"),
+    ("glsl", ".glsl", "void main() {}", "function"),
+    ("hlsl", ".hlsl", "float4 main() : SV_Target { return float4(1,1,1,1); }", "function"),
+    ("wgsl", ".wgsl", "fn vs_main() -> vec4f { return vec4f(0.0); }", "function"),
+    ("nix", ".nix", "let\n  hello = 42;\nin hello", "constant"),
 ]
 
 
@@ -88,3 +139,13 @@ class TestEdgeCases:
         """_get_parser raises ValueError for languages outside the allow-list."""
         with pytest.raises(ValueError, match="Unsupported language"):
             _get_parser("brainfuck")
+
+
+class TestSmokeCoverage:
+    """Ensure smoke cases stay in sync with SUPPORTED_LANGUAGES."""
+
+    def test_smoke_cases_cover_all_languages(self):
+        smoke_langs = {case[0] for case in LANGUAGE_SMOKE_CASES}
+        assert smoke_langs == SUPPORTED_LANGUAGES, (
+            f"Missing smoke cases: {SUPPORTED_LANGUAGES - smoke_langs}"
+        )

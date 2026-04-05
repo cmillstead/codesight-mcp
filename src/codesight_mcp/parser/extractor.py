@@ -32,6 +32,11 @@ SUPPORTED_LANGUAGES = frozenset({
     "zig", "d", "objc", "ocaml", "fsharp", "elm",
     "sql", "powershell", "solidity",
     "hcl", "proto", "graphql",
+    "css", "scss", "html", "xml", "yaml", "json", "toml", "make",
+    "fortran", "cmake", "matlab", "cuda", "v", "gleam", "odin",
+    "gdscript", "verilog", "vhdl",
+    "ada", "pascal", "commonlisp", "scheme", "racket", "tcl", "dockerfile",
+    "glsl", "hlsl", "wgsl", "nix",
 })
 _ALLOWED_LANGUAGES = SUPPORTED_LANGUAGES  # backward compat
 
@@ -50,6 +55,11 @@ _LANGUAGE_PACK_LANGUAGES = {
     "zig", "d", "objc", "ocaml", "fsharp", "elm",
     "sql", "powershell", "solidity",
     "hcl", "proto", "graphql",
+    "css", "scss", "html", "xml", "yaml", "json", "toml", "make",
+    "fortran", "cmake", "matlab", "cuda", "v", "gleam", "odin",
+    "gdscript", "verilog", "vhdl",
+    "ada", "pascal", "commonlisp", "scheme", "racket", "tcl", "dockerfile",
+    "glsl", "hlsl", "wgsl", "nix",
 }
 
 def _get_parser(lang_name: str) -> Parser | None:
@@ -206,7 +216,10 @@ def _extract_symbol(
         qualified_name = name
 
     # Build signature and sanitize secrets at parse time (SEC-HIGH-1)
-    signature = sanitize_signature_for_api(_build_signature(node, spec, source_bytes))
+    if spec.signature_from_name:
+        signature = name
+    else:
+        signature = sanitize_signature_for_api(_build_signature(node, spec, source_bytes))
 
     # Extract docstring and sanitize secrets at parse time (SEC-HIGH-1)
     docstring = sanitize_signature_for_api(_extract_docstring(node, spec, source_bytes))
