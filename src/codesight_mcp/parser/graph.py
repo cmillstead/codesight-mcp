@@ -9,7 +9,8 @@ from typing import Optional
 def _build_import_resolution_map(source_files: list[str]) -> dict[str, str | None]:
     """Build a multi-key lookup mapping import strings to source file paths.
 
-    For each source file, generates three match keys:
+    For each source file, generates four match keys:
+    - Original path: the full file path (Foo.h -> Foo.h, for C-family #include)
     - Full path stem: strip extension (pkg/utils.py -> pkg/utils)
     - Dotted form: replace / with . in stem (pkg/utils -> pkg.utils)
     - Basename: filename without extension (utils)
@@ -24,7 +25,8 @@ def _build_import_resolution_map(source_files: list[str]) -> dict[str, str | Non
         basename = stem.rsplit("/", 1)[-1] if "/" in stem else stem
         dotted = stem.replace("/", ".")
 
-        for key in (stem, dotted, basename):
+        # Include the original path so C-family #include "Foo.h" resolves
+        for key in (f, stem, dotted, basename):
             key_to_files[key].append(f)
 
     # Resolve: single file = unambiguous, multiple = ambiguous (None)

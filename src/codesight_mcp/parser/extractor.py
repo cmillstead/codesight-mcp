@@ -250,6 +250,26 @@ def _extract_symbol(
         # Dart: body is a sibling function_body, not a child
         if body is None:
             body = _find_dart_body_sibling(node)
+        # Fallback: find body as a named child by type for languages where
+        # tree-sitter doesn't expose it as a field (D, ObjC, etc.)
+        if body is None:
+            for child in node.named_children:
+                if child.type in ("function_body", "compound_statement", "block_statement", "block"):
+                    body = child
+                    break
+        # Odin: procedure_declaration → procedure child → block grandchild
+        if body is None:
+            for child in node.named_children:
+                if child.type == "procedure":
+                    for gc in child.named_children:
+                        if gc.type == "block":
+                            body = gc
+                            break
+                    break
+        # Final fallback: use node itself as body for languages where statements
+        # are direct children (e.g., Fortran subroutine has no body wrapper).
+        if body is None and node.type in ("subroutine", "function"):
+            body = node
         if body:
             calls = _extract_calls(body, spec, source_bytes)
 
@@ -604,8 +624,11 @@ def _collect_calls(node, spec: LanguageSpec, source_bytes: bytes, calls: list, _
                 if name:
                     calls.append(name)
 
-    # Recurse into children
+    # Recurse into children, but skip nested symbol declarations
+    # (e.g., Fortran internal procedures after `contains`)
     for child in node.children:
+        if child.type in spec.symbol_node_types:
+            continue
         _collect_calls(child, spec, source_bytes, calls, _depth + 1)
 
 
