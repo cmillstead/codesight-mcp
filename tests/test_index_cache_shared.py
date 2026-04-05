@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from codesight_mcp.parser import Symbol
-from codesight_mcp.storage.index_store import INDEX_VERSION, IndexStore
+from codesight_mcp.storage.index_store import INDEX_VERSION
 from codesight_mcp.tools._common import (
     RepoContext,
     _clear_shared_stores,
