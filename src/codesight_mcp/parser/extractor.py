@@ -134,13 +134,34 @@ def parse_file(content: str, filename: str, language: str) -> list[Symbol]:
     symbols = []
     _walk_tree(tree.root_node, spec, source_bytes, filename, language, symbols, None)
 
-    # Extract file-level imports and attach to all top-level symbols
+    # Extract file-level imports and attach to all top-level symbols.
+    # If a file has imports but no top-level symbols (e.g., __init__.py with
+    # only re-exports), create a synthetic file-level symbol to carry the
+    # imports so they contribute to dependency analysis and cycle detection.
     if spec.import_node_types:
         file_imports = _extract_imports(tree.root_node, spec, source_bytes)
         if file_imports:
-            for sym in symbols:
-                if sym.parent is None:
+            top_level = [sym for sym in symbols if sym.parent is None]
+            if top_level:
+                for sym in top_level:
                     sym.imports = file_imports
+            else:
+                # No top-level symbols — create synthetic carrier
+                symbols.append(Symbol(
+                    id=f"{filename}::(module)",
+                    name="(module)",
+                    qualified_name="(module)",
+                    kind="symbol",
+                    file=filename,
+                    line=1,
+                    end_line=1,
+                    language=language,
+                    signature=filename,
+                    docstring="",
+                    decorators=[],
+                    parent=None,
+                    imports=file_imports,
+                ))
 
     # Disambiguate overloaded symbols (same ID)
     symbols = _disambiguate_overloads(symbols)
@@ -250,6 +271,26 @@ def _extract_symbol(
         # Dart: body is a sibling function_body, not a child
         if body is None:
             body = _find_dart_body_sibling(node)
+        # Fallback: find body as a named child by type for languages where
+        # tree-sitter doesn't expose it as a field (D, ObjC, etc.)
+        if body is None:
+            for child in node.named_children:
+                if child.type in ("function_body", "compound_statement", "block_statement", "block"):
+                    body = child
+                    break
+        # Odin: procedure_declaration → procedure child → block grandchild
+        if body is None:
+            for child in node.named_children:
+                if child.type == "procedure":
+                    for gc in child.named_children:
+                        if gc.type == "block":
+                            body = gc
+                            break
+                    break
+        # Final fallback: use node itself as body for languages where statements
+        # are direct children (e.g., Fortran subroutine has no body wrapper).
+        if body is None and node.type in ("subroutine", "function"):
+            body = node
         if body:
             calls = _extract_calls(body, spec, source_bytes)
 
@@ -604,8 +645,11 @@ def _collect_calls(node, spec: LanguageSpec, source_bytes: bytes, calls: list, _
                 if name:
                     calls.append(name)
 
-    # Recurse into children
+    # Recurse into children, but skip nested symbol declarations
+    # (e.g., Fortran internal procedures after `contains`)
     for child in node.children:
+        if child.type in spec.symbol_node_types:
+            continue
         _collect_calls(child, spec, source_bytes, calls, _depth + 1)
 
 
