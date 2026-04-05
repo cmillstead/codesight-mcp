@@ -70,6 +70,11 @@ class LanguageSpec:
     # Returns True if the call was handled, False to fall through to default logic.
     extract_call_target: Optional[Callable] = None
 
+    # When True, _extract_symbol() sets signature = name instead of calling
+    # _build_signature(). Used by config languages (yaml, json, toml, html, xml)
+    # to prevent secret values from leaking into signatures.
+    signature_from_name: bool = False
+
 
 def _strip_quotes(text: str) -> str:
     """Strip quotes from a string literal."""
@@ -962,6 +967,55 @@ LANGUAGE_EXTENSIONS = {
     ".proto": "proto",
     ".graphql": "graphql",
     ".gql": "graphql",
+    ".css": "css",
+    ".scss": "scss",
+    ".html": "html",
+    ".htm": "html",
+    ".xml": "xml",
+    ".xsl": "xml",
+    ".xsd": "xml",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".json": "json",
+    ".toml": "toml",
+    ".mk": "make",
+    ".f90": "fortran",
+    ".f95": "fortran",
+    ".f03": "fortran",
+    ".f08": "fortran",
+    ".f": "fortran",
+    ".cmake": "cmake",
+    ".m": "matlab",
+    ".cu": "cuda",
+    ".cuh": "cuda",
+    ".vv": "v",
+    ".gleam": "gleam",
+    ".odin": "odin",
+    ".gd": "gdscript",
+    ".sv": "verilog",
+    ".vhd": "vhdl",
+    ".vhdl": "vhdl",
+    ".adb": "ada",
+    ".ads": "ada",
+    ".pas": "pascal",
+    ".pp": "pascal",
+    ".lisp": "commonlisp",
+    ".cl": "commonlisp",
+    ".lsp": "commonlisp",
+    ".scm": "scheme",
+    ".ss": "scheme",
+    ".rkt": "racket",
+    ".tcl": "tcl",
+    ".dockerfile": "dockerfile",
+    ".glsl": "glsl",
+    ".vert": "glsl",
+    ".frag": "glsl",
+    ".geom": "glsl",
+    ".comp": "glsl",
+    ".hlsl": "hlsl",
+    ".fx": "hlsl",
+    ".wgsl": "wgsl",
+    ".nix": "nix",
 }
 
 
@@ -2235,6 +2289,1169 @@ GRAPHQL_SPEC = LanguageSpec(
 )
 
 
+# ---------------------------------------------------------------------------
+# CSS custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_css(node, source_bytes: bytes):
+    """CSS: rule_set → selectors child text; keyframes_statement → keyframes_name child text."""
+    if node.type == "rule_set":
+        for child in node.named_children:
+            if child.type == "selectors":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8").strip()
+        return None
+
+    if node.type == "keyframes_statement":
+        for child in node.named_children:
+            if child.type == "keyframes_name":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8").strip()
+        return None
+
+    return None
+
+
+CSS_SPEC = LanguageSpec(
+    ts_language="css",
+    symbol_node_types={
+        "rule_set": "class",
+        "keyframes_statement": "function",
+    },
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_css,
+)
+
+
+# ---------------------------------------------------------------------------
+# SCSS custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_scss(node, source_bytes: bytes):
+    """SCSS: same as CSS, plus declaration → property_name child text."""
+    if node.type == "rule_set":
+        for child in node.named_children:
+            if child.type == "selectors":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8").strip()
+        return None
+
+    if node.type == "keyframes_statement":
+        for child in node.named_children:
+            if child.type == "keyframes_name":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8").strip()
+        return None
+
+    if node.type == "declaration":
+        for child in node.named_children:
+            if child.type == "property_name":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8").strip()
+        return None
+
+    return None
+
+
+def _resolve_kind_scss(node, source_bytes: bytes, default_kind: str) -> str | None:
+    """SCSS: for declarations, only extract $variable declarations (skip regular properties)."""
+    if node.type == "declaration":
+        for child in node.named_children:
+            if child.type == "property_name":
+                text = source_bytes[child.start_byte:child.end_byte].decode("utf-8").strip()
+                if not text.startswith("$"):
+                    return None  # Skip non-variable declarations
+                return default_kind
+        return None
+    return default_kind
+
+
+SCSS_SPEC = LanguageSpec(
+    ts_language="scss",
+    symbol_node_types={
+        "rule_set": "class",
+        "keyframes_statement": "function",
+        "declaration": "constant",
+    },
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_scss,
+    resolve_kind=_resolve_kind_scss,
+)
+
+
+# ---------------------------------------------------------------------------
+# HTML custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_html(node, source_bytes: bytes):
+    """HTML: element → find start_tag child, then get tag_name child text."""
+    if node.type == "element":
+        for child in node.named_children:
+            if child.type == "start_tag":
+                for sub in child.named_children:
+                    if sub.type == "tag_name":
+                        return source_bytes[sub.start_byte:sub.end_byte].decode("utf-8")
+                break
+    return None
+
+
+def _resolve_kind_html(node, source_bytes: bytes, default_kind: str) -> str | None:
+    """HTML: only extract root elements (direct children of document)."""
+    if node.type == "element":
+        if node.parent is None or node.parent.type != "document":
+            return None
+    return default_kind
+
+
+HTML_SPEC = LanguageSpec(
+    ts_language="html",
+    symbol_node_types={"element": "class"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_html,
+    resolve_kind=_resolve_kind_html,
+    signature_from_name=True,
+)
+
+
+# ---------------------------------------------------------------------------
+# XML custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_xml(node, source_bytes: bytes):
+    """XML: element → find STag or EmptyElemTag child, then get Name child text."""
+    if node.type == "element":
+        for child in node.named_children:
+            if child.type in ("STag", "EmptyElemTag"):
+                for sub in child.named_children:
+                    if sub.type == "Name":
+                        return source_bytes[sub.start_byte:sub.end_byte].decode("utf-8")
+                break
+    return None
+
+
+def _resolve_kind_xml(node, source_bytes: bytes, default_kind: str) -> str | None:
+    """XML: only extract root elements (direct children of document)."""
+    if node.type == "element":
+        if node.parent is None or node.parent.type != "document":
+            return None
+    return default_kind
+
+
+XML_SPEC = LanguageSpec(
+    ts_language="xml",
+    symbol_node_types={"element": "class"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_xml,
+    resolve_kind=_resolve_kind_xml,
+    signature_from_name=True,
+)
+
+
+# ---------------------------------------------------------------------------
+# YAML custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_yaml(node, source_bytes: bytes):
+    """YAML: block_mapping_pair → get key from first flow_node child.
+
+    Handles plain_scalar (unquoted), double_quote_scalar, and single_quote_scalar keys.
+    """
+    if node.type == "block_mapping_pair":
+        for child in node.named_children:
+            if child.type == "flow_node":
+                for sub in child.named_children:
+                    if sub.type == "plain_scalar":
+                        return source_bytes[sub.start_byte:sub.end_byte].decode("utf-8").strip()
+                    if sub.type in ("double_quote_scalar", "single_quote_scalar"):
+                        raw = source_bytes[sub.start_byte:sub.end_byte].decode("utf-8").strip()
+                        return _strip_quotes(raw)
+                # flow_node might directly contain text
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8").strip()
+        # Fallback: first named child could be the key directly
+        if node.named_child_count > 0:
+            first = node.named_children[0]
+            if first.type == "flow_node":
+                return source_bytes[first.start_byte:first.end_byte].decode("utf-8").strip()
+    return None
+
+
+def _resolve_kind_yaml(node, source_bytes: bytes, default_kind: str) -> str | None:
+    """YAML: only extract top-level block_mapping_pair nodes.
+
+    Valid path: block_mapping_pair → block_mapping → block_node → document.
+    Walk up 3 parents and verify the chain. If deeper, return None.
+    """
+    if node.type != "block_mapping_pair":
+        return default_kind
+
+    parent = node.parent
+    if parent is None or parent.type != "block_mapping":
+        return None
+
+    grandparent = parent.parent
+    if grandparent is None or grandparent.type != "block_node":
+        return None
+
+    great_grandparent = grandparent.parent
+    if great_grandparent is None:
+        return None
+
+    # Accept both 'document' and 'stream' as top-level — some YAML grammars
+    # have stream → document → block_node → block_mapping → block_mapping_pair
+    if great_grandparent.type in ("document", "stream"):
+        return default_kind
+
+    return None
+
+
+YAML_SPEC = LanguageSpec(
+    ts_language="yaml",
+    symbol_node_types={"block_mapping_pair": "constant"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_yaml,
+    resolve_kind=_resolve_kind_yaml,
+    signature_from_name=True,
+)
+
+
+# ---------------------------------------------------------------------------
+# JSON custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_json(node, source_bytes: bytes):
+    """JSON: pair → get 'key' field (child_by_field_name), strip quotes."""
+    if node.type == "pair":
+        key_node = node.child_by_field_name("key")
+        if key_node:
+            text = source_bytes[key_node.start_byte:key_node.end_byte].decode("utf-8")
+            return _strip_quotes(text)
+    return None
+
+
+def _resolve_kind_json(node, source_bytes: bytes, default_kind: str) -> str | None:
+    """JSON: only extract top-level pairs (parent object is direct child of document)."""
+    if node.type == "pair":
+        parent = node.parent
+        if parent is None or parent.type != "object":
+            return None
+        grandparent = parent.parent
+        if grandparent is None or grandparent.type != "document":
+            return None
+        return default_kind
+    return default_kind
+
+
+JSON_SPEC = LanguageSpec(
+    ts_language="json",
+    symbol_node_types={"pair": "constant"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_json,
+    resolve_kind=_resolve_kind_json,
+    signature_from_name=True,
+)
+
+
+# ---------------------------------------------------------------------------
+# TOML custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_toml(node, source_bytes: bytes):
+    """TOML: table → bare_key child text; pair → first bare_key or quoted_key child text."""
+    if node.type == "table":
+        for child in node.named_children:
+            if child.type == "bare_key":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+        return None
+
+    if node.type == "pair":
+        for child in node.named_children:
+            if child.type == "bare_key":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+            if child.type == "quoted_key":
+                raw = source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+                return _strip_quotes(raw)
+        return None
+
+    return None
+
+
+def _resolve_kind_toml(node, source_bytes: bytes, default_kind: str) -> str | None:
+    """TOML: for pair, only extract top-level (parent is document). For table, always keep."""
+    if node.type == "pair":
+        if node.parent is None or node.parent.type != "document":
+            return None
+        return default_kind
+    return default_kind
+
+
+TOML_SPEC = LanguageSpec(
+    ts_language="toml",
+    symbol_node_types={
+        "table": "class",
+        "pair": "constant",
+    },
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_toml,
+    resolve_kind=_resolve_kind_toml,
+    signature_from_name=True,
+)
+
+
+# ---------------------------------------------------------------------------
+# Make custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_make(node, source_bytes: bytes):
+    """Make: rule → find targets named child, then get first named child text."""
+    if node.type == "rule":
+        targets = node.child_by_field_name("targets")
+        if targets is None:
+            # Fallback: find first child of a target-like type
+            for child in node.named_children:
+                if child.type in ("targets", "word"):
+                    targets = child
+                    break
+        if targets is not None:
+            # Get first named child (usually a 'word' node)
+            if targets.named_child_count > 0:
+                first = targets.named_children[0]
+                return source_bytes[first.start_byte:first.end_byte].decode("utf-8").strip()
+            # If no named children, use the targets node text directly
+            return source_bytes[targets.start_byte:targets.end_byte].decode("utf-8").strip()
+    return None
+
+
+MAKE_SPEC = LanguageSpec(
+    ts_language="make",
+    symbol_node_types={"rule": "function"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_make,
+)
+
+
+# ---------------------------------------------------------------------------
+# Fortran custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_fortran(node, source_bytes: bytes):
+    """Fortran: subroutine/function → subroutine_statement/function_statement → name child.
+    program → program_statement child → name child."""
+    if node.type in ("subroutine", "function"):
+        # Name is inside subroutine_statement or function_statement child
+        stmt_types = ("subroutine_statement", "function_statement")
+        for child in node.named_children:
+            if child.type in stmt_types:
+                for gc in child.named_children:
+                    if gc.type in ("name", "identifier"):
+                        return source_bytes[gc.start_byte:gc.end_byte].decode("utf-8")
+                return None
+        # Fallback: try child_by_field_name or direct identifier
+        name_node = node.child_by_field_name("name")
+        if name_node:
+            return source_bytes[name_node.start_byte:name_node.end_byte].decode("utf-8")
+        for child in node.named_children:
+            if child.type in ("name", "identifier"):
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+        return None
+
+    if node.type == "program":
+        for child in node.named_children:
+            if child.type == "program_statement":
+                for gc in child.named_children:
+                    if gc.type in ("name", "identifier"):
+                        return source_bytes[gc.start_byte:gc.end_byte].decode("utf-8")
+                return None
+        return None
+
+    return None
+
+
+FORTRAN_SPEC = LanguageSpec(
+    ts_language="fortran",
+    symbol_node_types={
+        "subroutine": "function",
+        "function": "function",
+        "program": "class",
+    },
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=["program"],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_fortran,
+)
+
+
+# ---------------------------------------------------------------------------
+# CMake custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_cmake(node, source_bytes: bytes):
+    """CMake: function_def → function_command → argument_list → first argument.
+    macro_def → macro_command → argument_list → first argument."""
+    if node.type == "function_def":
+        for child in node.named_children:
+            if child.type == "function_command":
+                for gc in child.named_children:
+                    if gc.type == "argument_list":
+                        for arg in gc.named_children:
+                            if arg.type == "argument":
+                                raw = source_bytes[arg.start_byte:arg.end_byte].decode("utf-8")
+                                return _strip_quotes(raw)
+                        # Fallback: first named child of argument_list
+                        if gc.named_child_count > 0:
+                            raw = source_bytes[gc.named_children[0].start_byte:gc.named_children[0].end_byte].decode("utf-8")
+                            return _strip_quotes(raw)
+                return None
+        return None
+
+    if node.type == "macro_def":
+        for child in node.named_children:
+            if child.type == "macro_command":
+                for gc in child.named_children:
+                    if gc.type == "argument_list":
+                        for arg in gc.named_children:
+                            if arg.type == "argument":
+                                raw = source_bytes[arg.start_byte:arg.end_byte].decode("utf-8")
+                                return _strip_quotes(raw)
+                        if gc.named_child_count > 0:
+                            raw = source_bytes[gc.named_children[0].start_byte:gc.named_children[0].end_byte].decode("utf-8")
+                            return _strip_quotes(raw)
+                return None
+        return None
+
+    return None
+
+
+CMAKE_SPEC = LanguageSpec(
+    ts_language="cmake",
+    symbol_node_types={
+        "function_def": "function",
+        "macro_def": "function",
+    },
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_cmake,
+)
+
+
+# ---------------------------------------------------------------------------
+# MATLAB custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_matlab(node, source_bytes: bytes):
+    """MATLAB: function_definition → identifier child directly."""
+    if node.type == "function_definition":
+        for child in node.named_children:
+            if child.type == "identifier":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+        return None
+
+    return None
+
+
+MATLAB_SPEC = LanguageSpec(
+    ts_language="matlab",
+    symbol_node_types={"function_definition": "function"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_matlab,
+)
+
+
+# ---------------------------------------------------------------------------
+# CUDA specification (C-like, reuses _extract_name_c_cpp)
+# ---------------------------------------------------------------------------
+
+CUDA_SPEC = LanguageSpec(
+    ts_language="cuda",
+    symbol_node_types={
+        "function_definition": "function",
+        "struct_specifier": "type",
+    },
+    name_fields={
+        "struct_specifier": "name",
+    },
+    param_fields={},
+    return_type_fields={
+        "function_definition": "type",
+    },
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=["struct_specifier"],
+    constant_patterns=[],
+    type_patterns=["struct_specifier"],
+    extract_name=_extract_name_c_cpp,
+)
+
+
+# ---------------------------------------------------------------------------
+# V language custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_v(node, source_bytes: bytes):
+    """V: function_declaration → first identifier child.
+    struct_declaration → first type_identifier child."""
+    if node.type == "function_declaration":
+        for child in node.named_children:
+            if child.type == "identifier":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+        return None
+
+    if node.type == "struct_declaration":
+        for child in node.named_children:
+            if child.type == "type_identifier":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+        return None
+
+    return None
+
+
+V_SPEC = LanguageSpec(
+    ts_language="v",
+    symbol_node_types={
+        "function_declaration": "function",
+        "struct_declaration": "class",
+    },
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_v,
+)
+
+
+# ---------------------------------------------------------------------------
+# Gleam custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_gleam(node, source_bytes: bytes):
+    """Gleam: function → first identifier named child."""
+    if node.type == "function":
+        for child in node.named_children:
+            if child.type == "identifier":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+        return None
+
+    return None
+
+
+GLEAM_SPEC = LanguageSpec(
+    ts_language="gleam",
+    symbol_node_types={"function": "function"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_gleam,
+)
+
+
+# ---------------------------------------------------------------------------
+# Odin custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_odin(node, source_bytes: bytes):
+    """Odin: procedure_declaration → first identifier named child."""
+    if node.type == "procedure_declaration":
+        for child in node.named_children:
+            if child.type == "identifier":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+        return None
+
+    return None
+
+
+ODIN_SPEC = LanguageSpec(
+    ts_language="odin",
+    symbol_node_types={"procedure_declaration": "function"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_odin,
+)
+
+
+# ---------------------------------------------------------------------------
+# GDScript specification (name_fields work directly)
+# ---------------------------------------------------------------------------
+
+GDSCRIPT_SPEC = LanguageSpec(
+    ts_language="gdscript",
+    symbol_node_types={
+        "function_definition": "function",
+        "variable_statement": "constant",
+    },
+    name_fields={
+        "function_definition": "name",
+        "variable_statement": "name",
+    },
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+)
+
+
+# ---------------------------------------------------------------------------
+# Verilog custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_verilog(node, source_bytes: bytes):
+    """Verilog: module_declaration → module_header child → simple_identifier child text."""
+    if node.type == "module_declaration":
+        for child in node.named_children:
+            if child.type == "module_header":
+                for gc in child.named_children:
+                    if gc.type == "simple_identifier":
+                        return source_bytes[gc.start_byte:gc.end_byte].decode("utf-8")
+                return None
+        # Fallback: look for simple_identifier directly
+        for child in node.named_children:
+            if child.type == "simple_identifier":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+        return None
+
+    return None
+
+
+VERILOG_SPEC = LanguageSpec(
+    ts_language="verilog",
+    symbol_node_types={"module_declaration": "class"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_verilog,
+)
+
+
+# ---------------------------------------------------------------------------
+# VHDL custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_vhdl(node, source_bytes: bytes):
+    """VHDL: entity_declaration/architecture_body → first identifier named child."""
+    if node.type in ("entity_declaration", "architecture_body"):
+        for child in node.named_children:
+            if child.type == "identifier":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+        return None
+
+    return None
+
+
+VHDL_SPEC = LanguageSpec(
+    ts_language="vhdl",
+    symbol_node_types={
+        "entity_declaration": "class",
+        "architecture_body": "class",
+    },
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_vhdl,
+)
+
+
+# ---------------------------------------------------------------------------
+# Ada custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_ada(node, source_bytes: bytes):
+    """Ada: subprogram_body → find procedure_specification or function_specification child
+    → get first identifier child from it (NOT from subprogram_body directly, which has a
+    trailing end-name identifier)."""
+    if node.type == "subprogram_body":
+        for child in node.named_children:
+            if child.type in ("procedure_specification", "function_specification"):
+                for gc in child.named_children:
+                    if gc.type == "identifier":
+                        return source_bytes[gc.start_byte:gc.end_byte].decode("utf-8")
+                return None
+        return None
+
+    return None
+
+
+ADA_SPEC = LanguageSpec(
+    ts_language="ada",
+    symbol_node_types={"subprogram_body": "function"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_ada,
+)
+
+
+# ---------------------------------------------------------------------------
+# Pascal custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_pascal(node, source_bytes: bytes):
+    """Pascal: program → moduleName child → identifier child text.
+    defProc → declProc child → identifier child within it."""
+    if node.type == "program":
+        for child in node.named_children:
+            if child.type == "moduleName":
+                for gc in child.named_children:
+                    if gc.type == "identifier":
+                        return source_bytes[gc.start_byte:gc.end_byte].decode("utf-8")
+                return None
+        return None
+
+    if node.type == "defProc":
+        for child in node.named_children:
+            if child.type == "declProc":
+                for gc in child.named_children:
+                    if gc.type == "identifier":
+                        return source_bytes[gc.start_byte:gc.end_byte].decode("utf-8")
+                return None
+        return None
+
+    return None
+
+
+PASCAL_SPEC = LanguageSpec(
+    ts_language="pascal",
+    symbol_node_types={
+        "program": "class",
+        "defProc": "function",
+    },
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=["program"],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_pascal,
+)
+
+
+# ---------------------------------------------------------------------------
+# Common Lisp custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_commonlisp(node, source_bytes: bytes):
+    """Common Lisp: defun → defun_header child → find sym_lit named child (function name).
+    AST: defun_header has defun_keyword + sym_lit (name) + list_lit (params)."""
+    if node.type == "defun":
+        for child in node.named_children:
+            if child.type == "defun_header":
+                for gc in child.named_children:
+                    if gc.type == "sym_lit":
+                        return source_bytes[gc.start_byte:gc.end_byte].decode("utf-8")
+                return None
+        return None
+
+    return None
+
+
+COMMONLISP_SPEC = LanguageSpec(
+    ts_language="commonlisp",
+    symbol_node_types={"defun": "function"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_commonlisp,
+)
+
+
+# ---------------------------------------------------------------------------
+# Scheme / Racket custom extractors (shared)
+# ---------------------------------------------------------------------------
+
+def _resolve_kind_scheme(node, source_bytes: bytes, default_kind: str) -> str | None:
+    """Scheme/Racket: list where first symbol child is 'define'.
+    If second named child is a list → function.
+    If second named child is a symbol → constant.
+    Otherwise skip."""
+    if node.type != "list":
+        return default_kind
+    named = node.named_children
+    # Find first symbol child
+    first_sym = None
+    for child in named:
+        if child.type == "symbol":
+            first_sym = child
+            break
+    if first_sym is None:
+        return None
+    text = source_bytes[first_sym.start_byte:first_sym.end_byte].decode("utf-8")
+    if text != "define":
+        return None
+    # Find second named child (skip the 'define' symbol itself)
+    idx = named.index(first_sym)
+    rest = named[idx + 1:]
+    if not rest:
+        return None
+    second = rest[0]
+    if second.type == "list":
+        return "function"
+    if second.type == "symbol":
+        return "constant"
+    return None
+
+
+def _extract_name_scheme(node, source_bytes: bytes):
+    """Scheme/Racket: extract name from (define ...) forms.
+    Function form: (define (name ...) ...) → first symbol in second child list.
+    Constant form: (define name ...) → second named child symbol text."""
+    if node.type != "list":
+        return None
+    named = node.named_children
+    # Find first symbol (should be 'define')
+    first_sym = None
+    for child in named:
+        if child.type == "symbol":
+            first_sym = child
+            break
+    if first_sym is None:
+        return None
+    text = source_bytes[first_sym.start_byte:first_sym.end_byte].decode("utf-8")
+    if text != "define":
+        return None
+    idx = named.index(first_sym)
+    rest = named[idx + 1:]
+    if not rest:
+        return None
+    second = rest[0]
+    if second.type == "list":
+        # (define (name args...) body) — first symbol in the list is the name
+        for child in second.named_children:
+            if child.type == "symbol":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+        return None
+    if second.type == "symbol":
+        return source_bytes[second.start_byte:second.end_byte].decode("utf-8")
+    return None
+
+
+SCHEME_SPEC = LanguageSpec(
+    ts_language="scheme",
+    symbol_node_types={"list": "function"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_scheme,
+    resolve_kind=_resolve_kind_scheme,
+)
+
+
+RACKET_SPEC = LanguageSpec(
+    ts_language="racket",
+    symbol_node_types={"list": "function"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_scheme,
+    resolve_kind=_resolve_kind_scheme,
+)
+
+
+# ---------------------------------------------------------------------------
+# Tcl custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_tcl(node, source_bytes: bytes):
+    """Tcl: procedure → first simple_word named child → text."""
+    if node.type == "procedure":
+        for child in node.named_children:
+            if child.type == "simple_word":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+        return None
+
+    return None
+
+
+TCL_SPEC = LanguageSpec(
+    ts_language="tcl",
+    symbol_node_types={"procedure": "function"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_tcl,
+)
+
+
+# ---------------------------------------------------------------------------
+# Dockerfile custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_dockerfile(node, source_bytes: bytes):
+    """Dockerfile: from_instruction → image_spec child → image_name child text."""
+    if node.type == "from_instruction":
+        for child in node.named_children:
+            if child.type == "image_spec":
+                for gc in child.named_children:
+                    if gc.type == "image_name":
+                        return source_bytes[gc.start_byte:gc.end_byte].decode("utf-8")
+                return None
+        return None
+
+    return None
+
+
+DOCKERFILE_SPEC = LanguageSpec(
+    ts_language="dockerfile",
+    symbol_node_types={"from_instruction": "class"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_dockerfile,
+    signature_from_name=True,
+)
+
+
+# ---------------------------------------------------------------------------
+# GLSL specification (C-like, reuses _extract_name_c_cpp for functions)
+# ---------------------------------------------------------------------------
+
+def _extract_name_glsl(node, source_bytes: bytes):
+    """GLSL: function_definition uses C-like declarator drilling.
+    struct_specifier → first type_identifier child."""
+    if node.type == "function_definition":
+        return _extract_name_c_cpp(node, source_bytes)
+
+    if node.type == "struct_specifier":
+        for child in node.named_children:
+            if child.type == "type_identifier":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+        return None
+
+    return None
+
+
+GLSL_SPEC = LanguageSpec(
+    ts_language="glsl",
+    symbol_node_types={
+        "function_definition": "function",
+        "struct_specifier": "type",
+    },
+    name_fields={},
+    param_fields={},
+    return_type_fields={
+        "function_definition": "type",
+    },
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=["struct_specifier"],
+    constant_patterns=[],
+    type_patterns=["struct_specifier"],
+    extract_name=_extract_name_glsl,
+)
+
+
+# ---------------------------------------------------------------------------
+# HLSL specification (C-like, reuses _extract_name_c_cpp for functions)
+# ---------------------------------------------------------------------------
+
+HLSL_SPEC = LanguageSpec(
+    ts_language="hlsl",
+    symbol_node_types={
+        "function_definition": "function",
+    },
+    name_fields={},
+    param_fields={},
+    return_type_fields={
+        "function_definition": "type",
+    },
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_c_cpp,
+)
+
+
+# ---------------------------------------------------------------------------
+# WGSL custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_wgsl(node, source_bytes: bytes):
+    """WGSL: function_declaration and struct_declaration → first identifier child."""
+    if node.type in ("function_declaration", "struct_declaration"):
+        for child in node.named_children:
+            if child.type == "identifier":
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+        return None
+
+    return None
+
+
+WGSL_SPEC = LanguageSpec(
+    ts_language="wgsl",
+    symbol_node_types={
+        "function_declaration": "function",
+        "struct_declaration": "class",
+    },
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=["struct_declaration"],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_wgsl,
+)
+
+
+# ---------------------------------------------------------------------------
+# Nix custom extractors
+# ---------------------------------------------------------------------------
+
+def _extract_name_nix(node, source_bytes: bytes):
+    """Nix: binding → first attrpath or identifier child text."""
+    if node.type == "binding":
+        for child in node.named_children:
+            if child.type in ("attrpath", "identifier"):
+                return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
+        return None
+
+    return None
+
+
+NIX_SPEC = LanguageSpec(
+    ts_language="nix",
+    symbol_node_types={"binding": "constant"},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+    extract_name=_extract_name_nix,
+    signature_from_name=True,
+)
+
+
 # Language registry
 LANGUAGE_REGISTRY = {
     "python": PYTHON_SPEC,
@@ -2274,4 +3491,33 @@ LANGUAGE_REGISTRY = {
     "hcl": HCL_SPEC,
     "proto": PROTO_SPEC,
     "graphql": GRAPHQL_SPEC,
+    "css": CSS_SPEC,
+    "scss": SCSS_SPEC,
+    "html": HTML_SPEC,
+    "xml": XML_SPEC,
+    "yaml": YAML_SPEC,
+    "json": JSON_SPEC,
+    "toml": TOML_SPEC,
+    "make": MAKE_SPEC,
+    "fortran": FORTRAN_SPEC,
+    "cmake": CMAKE_SPEC,
+    "matlab": MATLAB_SPEC,
+    "cuda": CUDA_SPEC,
+    "v": V_SPEC,
+    "gleam": GLEAM_SPEC,
+    "odin": ODIN_SPEC,
+    "gdscript": GDSCRIPT_SPEC,
+    "verilog": VERILOG_SPEC,
+    "vhdl": VHDL_SPEC,
+    "ada": ADA_SPEC,
+    "pascal": PASCAL_SPEC,
+    "commonlisp": COMMONLISP_SPEC,
+    "scheme": SCHEME_SPEC,
+    "racket": RACKET_SPEC,
+    "tcl": TCL_SPEC,
+    "dockerfile": DOCKERFILE_SPEC,
+    "glsl": GLSL_SPEC,
+    "hlsl": HLSL_SPEC,
+    "wgsl": WGSL_SPEC,
+    "nix": NIX_SPEC,
 }
