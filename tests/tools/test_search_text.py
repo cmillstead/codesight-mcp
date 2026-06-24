@@ -1,6 +1,10 @@
 """Tests for search_text tool — spotlighting (ADV-HIGH-1) and existing behaviour."""
 
+import gzip
+import json
+import os
 import tempfile
+from pathlib import Path
 
 
 from codesight_mcp.storage import IndexStore
@@ -214,3 +218,126 @@ class TestSearchTextFileSpotlighting:
             )
             # Should not be blocked (only 3 chars)
             assert "error" not in result
+
+
+class TestSearchTextHiddenDotRoot:
+    """Regression: search_text must return results when the storage base_path
+    contains a hidden-dot segment (e.g. ~/.code-index).
+
+    Before the fix, safe_read_file's defense-in-depth validate_path call
+    rejected the trusted .code-index prefix and returned files_searched=0
+    for every repo on a default install.
+    """
+
+    def test_hidden_dot_root_returns_results(self):
+        """search_text must find a known token when base_path is under a hidden-dot dir."""
+        with tempfile.TemporaryDirectory() as base:
+            # Replicate the default ~/.code-index layout: hidden segment in base_path
+            hidden_base = str(Path(base) / ".code-index")
+            os.makedirs(hidden_base, exist_ok=True)
+
+            _make_store_with_file(
+                hidden_base, "owner", "hiddenrepo",
+                file_path="src/module.py",
+                file_content="def my_function():\n    return 42\n",
+            )
+
+            result = search_text(
+                repo="owner/hiddenrepo",
+                query="my_function",
+                storage_path=hidden_base,
+            )
+
+            assert "error" not in result, f"Unexpected error: {result.get('error')}"
+            assert result["result_count"] >= 1, (
+                "Expected at least one match — files_searched=0 indicates the "
+                "hidden-root segment bug is not fixed"
+            )
+            assert result["_meta"]["files_searched"] >= 1, (
+                f"files_searched={result.get('_meta', {}).get('files_searched')} — "
+                "content reads failed, hidden-root segment rejection not fixed"
+            )
+
+    def test_clean_relative_path_still_found_in_hidden_root(self):
+        """A clean relative file path inside a hidden-dot store is found by search_text."""
+        with tempfile.TemporaryDirectory() as base:
+            hidden_base = str(Path(base) / ".code-index")
+            os.makedirs(hidden_base, exist_ok=True)
+
+            _make_store_with_file(
+                hidden_base, "owner", "hiddenrepo2",
+                file_path="utils.py",
+                file_content="SEARCH_TOKEN = True\n",
+            )
+
+            result = search_text(
+                repo="owner/hiddenrepo2",
+                query="SEARCH_TOKEN",
+                storage_path=hidden_base,
+            )
+
+            assert "error" not in result
+            assert result["result_count"] >= 1
+            # Confirm the match text is wrapped (spotlighting still active)
+            for match in result["results"]:
+                assert match["text"].startswith("<<<UNTRUSTED_CODE_")
+
+
+class TestLoaderHardeningAbsolutePaths:
+    """Regression: index_store loader must drop absolute source_files entries.
+
+    A crafted index file could contain absolute paths in source_files (e.g.
+    '/root/.env').  These must be filtered at the loader trust boundary so
+    they never reach validate_file_access even with the post-resolution
+    hidden-segment guard as a second line of defence.
+    """
+
+    def _inject_absolute_entry(self, store: IndexStore, owner: str, name: str, abs_entry: str) -> None:
+        """Load the saved index, inject an absolute source_files entry, write back."""
+        index_gz = store.base_path / f"{owner}__{name}.json.gz"
+        with gzip.open(str(index_gz), "rt", encoding="utf-8") as fh:
+            data = json.load(fh)
+        data["source_files"].append(abs_entry)
+        raw = json.dumps(data).encode("utf-8")
+        with gzip.open(str(index_gz), "wb") as fh:
+            fh.write(raw)
+
+    def test_absolute_source_file_dropped_at_load(self):
+        """An absolute path injected into source_files is silently dropped on load."""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = _make_store_with_file(
+                tmp, "owner", "loadertest",
+                file_path="clean.py",
+                file_content="REAL_TOKEN = 1\n",
+            )
+            # Inject an absolute path entry simulating a crafted/tampered index
+            self._inject_absolute_entry(store, "owner", "loadertest", "/etc/passwd")
+            # Evict cache so reload reads from disk
+            store._index_cache.clear()
+
+            index = store.load_index("owner", "loadertest")
+            assert index is not None
+            # The absolute entry must have been stripped
+            assert "/etc/passwd" not in index.source_files
+            # The legitimate relative entry must still be present
+            assert "clean.py" in index.source_files
+
+    def test_search_text_ignores_absolute_source_file_entry(self):
+        """search_text returns results for legitimate files even when index has absolute entries."""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = _make_store_with_file(
+                tmp, "owner", "loadertest2",
+                file_path="app.py",
+                file_content="MY_SIGNAL = True\n",
+            )
+            self._inject_absolute_entry(store, "owner", "loadertest2", "/tmp/.env")
+            store._index_cache.clear()
+
+            result = search_text(
+                repo="owner/loadertest2",
+                query="MY_SIGNAL",
+                storage_path=tmp,
+            )
+
+            assert "error" not in result
+            assert result["result_count"] >= 1

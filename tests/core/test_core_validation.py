@@ -286,3 +286,150 @@ class TestValidatePathNFCNormalization:
             f.touch()
             result = validate_path("src/main.py", root)
             assert result.endswith("src/main.py")
+
+
+class TestHiddenDotRootSegment:
+    """Invariants for hidden-dot storage root + absolute re-validation path.
+
+    The storage root (e.g. ~/.code-index/<repo>) contains a dot-prefixed
+    segment.  When safe_read_file calls validate_path with the absolute content
+    path, assert_safe_segments must not reject that trusted prefix.
+    """
+
+    def _make_hidden_root_tree(self, base: str) -> tuple[str, str]:
+        """Return (hidden_root, abs_content_path) for a tree under base/.code-index/myrepo/."""
+        hidden_root = Path(base) / ".code-index" / "myrepo"
+        content_file = hidden_root / "src" / "app.ts"
+        content_file.parent.mkdir(parents=True)
+        content_file.write_text("export const x = 1;\n")
+        return str(hidden_root), str(content_file)
+
+    def test_hidden_root_abs_path_validates(self):
+        """Invariant 1: validate_path with abs_path under a hidden-dot root succeeds."""
+        with tempfile.TemporaryDirectory() as base:
+            hidden_root, abs_content = self._make_hidden_root_tree(base)
+            # This is the call safe_read_file makes for defense-in-depth re-validation
+            result = validate_path(abs_content, hidden_root)
+            assert result == str(Path(abs_content).resolve())
+
+    def test_hidden_root_safe_read_file_succeeds(self):
+        """Invariant 1 (end-to-end): safe_read_file reads content under a hidden-dot root."""
+        from codesight_mcp.security import safe_read_file
+        with tempfile.TemporaryDirectory() as base:
+            hidden_root, abs_content = self._make_hidden_root_tree(base)
+            content = safe_read_file(abs_content, hidden_root)
+            assert "export const x" in content
+
+    def test_dot_dot_still_rejected_relative(self):
+        """Invariant 2: '..' traversal in a relative path is still rejected."""
+        with tempfile.TemporaryDirectory() as root:
+            with pytest.raises(ValidationError, match="unsafe segment"):
+                validate_path("../../etc/passwd", root)
+
+    def test_dot_dot_still_rejected_absolute(self):
+        """Invariant 2: '..' in an absolute path string is still rejected."""
+        with tempfile.TemporaryDirectory() as base:
+            hidden_root = str(Path(base) / ".code-index" / "myrepo")
+            Path(hidden_root).mkdir(parents=True)
+            # Construct an absolute path containing '..' that would escape root
+            escape_path = hidden_root + "/../../../etc/passwd"
+            with pytest.raises(ValidationError, match="unsafe segment"):
+                validate_path(escape_path, hidden_root)
+
+    def test_absolute_path_outside_root_fails_containment(self):
+        """Invariant 3: an absolute path outside root still fails assert_inside_root."""
+        with tempfile.TemporaryDirectory() as base:
+            hidden_root = str(Path(base) / ".code-index" / "myrepo")
+            Path(hidden_root).mkdir(parents=True)
+            outside_path = str(Path(base) / "other" / "file.txt")
+            Path(base + "/other").mkdir()
+            Path(outside_path).write_text("x")
+            with pytest.raises(ValidationError, match="outside root"):
+                validate_path(outside_path, hidden_root)
+
+    def test_relative_hidden_segment_still_rejected(self):
+        """Invariant 4: relative paths with hidden segments are still rejected."""
+        with tempfile.TemporaryDirectory() as root:
+            with pytest.raises(ValidationError, match="unsafe segment"):
+                validate_path(".env", root)
+
+    def test_relative_hidden_dir_still_rejected(self):
+        """Invariant 4: relative paths through a hidden dir are still rejected."""
+        with tempfile.TemporaryDirectory() as root:
+            with pytest.raises(ValidationError, match="unsafe segment"):
+                validate_path(".ssh/id_rsa", root)
+
+
+class TestBypassRegressions:
+    """Regression tests for the two bypass classes identified by security review.
+
+    Bypass 1: absolute hidden path in source_files — a crafted index entry
+    like '<root>/.env' arrives at validate_file_access as an absolute path;
+    the pre-resolution assert_safe_segments skips the dot-check for absolute
+    paths, but _assert_relative_hidden_segments (post-resolution) catches it.
+
+    Bypass 2: symlink-to-hidden — a clean relative name (public.txt) symlinks
+    to a hidden target (.env); validate_path resolves the symlink before the
+    hidden-segment check, so the resolved .env segment is rejected.
+    """
+
+    def test_absolute_hidden_path_inside_root_rejected(self):
+        """Bypass 1: absolute path to a hidden file inside root is rejected."""
+        with tempfile.TemporaryDirectory() as base:
+            hidden_root = str(Path(base) / ".code-index" / "myrepo")
+            env_file = Path(hidden_root) / ".env"
+            env_file.parent.mkdir(parents=True)
+            env_file.write_text("SECRET=hunter2\n")
+            abs_hidden = str(env_file)
+            with pytest.raises(ValidationError, match="unsafe segment"):
+                validate_path(abs_hidden, hidden_root)
+
+    def test_absolute_hidden_path_via_clean_hidden_root_rejected(self):
+        """Bypass 1: absolute path with clean root but hidden file is still rejected."""
+        with tempfile.TemporaryDirectory() as root:
+            env_file = Path(root) / ".env"
+            env_file.write_text("SECRET=hunter2\n")
+            # Pass the absolute path directly (simulating a crafted source_files entry)
+            with pytest.raises(ValidationError, match="unsafe segment"):
+                validate_path(str(env_file), root)
+
+    def test_clean_file_under_hidden_root_still_allowed(self):
+        """Bypass 1 (counterpart): a clean file under a hidden-dot root still validates."""
+        with tempfile.TemporaryDirectory() as base:
+            hidden_root = str(Path(base) / ".code-index" / "myrepo")
+            clean_file = Path(hidden_root) / "src" / "app.ts"
+            clean_file.parent.mkdir(parents=True)
+            clean_file.write_text("export const x = 1;\n")
+            result = validate_path(str(clean_file), hidden_root)
+            assert result == str(clean_file.resolve())
+
+    def test_symlink_to_hidden_file_rejected(self):
+        """Bypass 2: a clean relative name that symlinks to a hidden file is rejected."""
+        with tempfile.TemporaryDirectory() as root:
+            env_file = Path(root) / ".env"
+            env_file.write_text("SECRET=hunter2\n")
+            link = Path(root) / "public.txt"
+            link.symlink_to(env_file)
+            with pytest.raises(ValidationError, match="unsafe segment"):
+                validate_path("public.txt", root)
+
+    def test_symlink_to_hidden_nested_rejected(self):
+        """Bypass 2: a symlink inside a subdir pointing to a hidden file is rejected."""
+        with tempfile.TemporaryDirectory() as root:
+            env_file = Path(root) / ".env"
+            env_file.write_text("SECRET=hunter2\n")
+            subdir = Path(root) / "src"
+            subdir.mkdir()
+            link = subdir / "config.txt"
+            link.symlink_to(env_file)
+            with pytest.raises(ValidationError, match="unsafe segment"):
+                validate_path("src/config.txt", root)
+
+    def test_allowed_dot_prefix_github_still_passes(self):
+        """.github/workflows/x.yml under root must still be allowed (via _ALLOWED_DOT_PREFIXES)."""
+        with tempfile.TemporaryDirectory() as root:
+            f = Path(root) / ".github" / "workflows" / "ci.yml"
+            f.parent.mkdir(parents=True)
+            f.write_text("on: push\n")
+            result = validate_path(".github/workflows/ci.yml", root)
+            assert result.endswith("ci.yml")

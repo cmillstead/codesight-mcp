@@ -649,9 +649,12 @@ class IndexStore:
             return None
         # ADV-LOW-5: filter source_files containing traversal or control characters
         # ADV-LOW-3: also filter C1 control range (128-159) for consistency with validation.py
+        # SEC: drop absolute paths — source_files must be repo-relative; an absolute
+        # path in a crafted index could target hidden files (e.g. /root/.env) that
+        # would pass containment but bypass the relative-segment check at first validation.
         data["source_files"] = [
             f for f in data["source_files"]
-            if ".." not in f and not any(
+            if not os.path.isabs(f) and ".." not in f and not any(
                 ord(c) < 32 or ord(c) == 127 or 128 <= ord(c) <= 159
                 for c in f
             )

@@ -42,13 +42,27 @@ _ALLOWED_DOT_PREFIXES = {".github", ".gitlab", ".circleci", ".husky", ".vscode"}
 def assert_safe_segments(path: str) -> None:
     """Step 2: Reject dot-prefixed segments and '..' traversal.
 
-    Allows known-safe dot-prefixed directories (.github, etc.)."""
+    Allows known-safe dot-prefixed directories (.github, etc.).
+
+    The dot-prefixed-segment (hidden-file) check is SKIPPED for absolute paths.
+    Absolute paths only reach this function when safe_read_file re-validates an
+    already-validated abs_path for defense-in-depth; the relative-path check
+    already enforced the hidden-segment policy when the path was first validated.
+    The storage root itself (e.g. ~/.code-index/<repo>) contains a hidden segment
+    that must not be rejected on re-validation.  The traversal-critical '..'
+    rejection remains UNCONDITIONAL regardless of whether the path is absolute.
+    """
+    is_absolute = Path(path).is_absolute()
     for segment in Path(path).parts:
         if segment == ".":
             continue
         if segment == "..":
             raise ValidationError(f"Path contains unsafe segment: {segment}")
-        if segment.startswith(".") and segment not in _ALLOWED_DOT_PREFIXES:
+        if (
+            not is_absolute
+            and segment.startswith(".")
+            and segment not in _ALLOWED_DOT_PREFIXES
+        ):
             raise ValidationError(f"Path contains unsafe segment: {segment}")
 
 
@@ -106,8 +120,37 @@ def assert_no_symlinked_parents(full_path: str, root: str) -> None:
         current = current.parent
 
 
+def _assert_relative_hidden_segments(full_path: str, resolved_root: str) -> None:
+    """Post-resolution hidden-segment check on the repo-relative portion only.
+
+    Computes the path RELATIVE TO resolved_root on the RESOLVED (post-symlink)
+    full_path and rejects any segment that starts with '.' (beyond the allowed
+    list) in that relative tail.  This is the authoritative hidden-file gate
+    because:
+
+    1. It ignores the trusted storage-root prefix (e.g. ~/.code-index) entirely,
+       so the original .code-index root-prefix bug stays fixed.
+    2. It operates on the resolved path, so a symlink from a clean relative name
+       (public.txt) to a hidden target (.env) is caught after symlink resolution.
+    3. It runs for both the relative-input call (validate_file_access) and the
+       absolute-input re-validation call (safe_read_file), covering every call
+       site (get_symbol, search_references, scan_security, search_text) without
+       changes to callers.
+
+    assert_inside_root MUST have passed before this is called so full_path is
+    guaranteed to be strictly inside resolved_root; therefore '..' cannot
+    appear in rel_parts and no additional '..' check is needed here.
+    """
+    rel = os.path.relpath(full_path, resolved_root)
+    for segment in Path(rel).parts:
+        if segment == ".":
+            continue
+        if segment.startswith(".") and segment not in _ALLOWED_DOT_PREFIXES:
+            raise ValidationError(f"Path contains unsafe segment: {segment}")
+
+
 def validate_path(path: str, root: str) -> str:
-    """Run the full 6-step validation chain.
+    """Run the full 6-step validation chain + post-resolution hidden-segment check.
 
     Returns the resolved absolute path if valid.
     Raises ValidationError if any step fails.
@@ -115,11 +158,16 @@ def validate_path(path: str, root: str) -> str:
     Steps:
         0. NFC normalization — canonical Unicode form before all checks
         1. assert_no_control_chars — reject C0 (ord < 32), DEL (0x7F), C1 (0x80–0x9F)
-        2. assert_safe_segments — reject .., dot-prefixed
+        2. assert_safe_segments — reject .., dot-prefixed (early gate; the dot-prefix
+           check is skipped for absolute inputs since the authoritative check is the
+           post-resolution step 7 below)
         3. assert_path_limits — max 512 chars, 10 depth
         4. Path.resolve() — normalize to absolute
         5. assert_inside_root — strict prefix + os.sep
         6. assert_no_symlinked_parents — lstat walk
+        7. _assert_relative_hidden_segments — authoritative hidden-segment check on
+           the resolved path relative to resolved_root; catches absolute hidden paths
+           in index source_files and symlink-to-hidden-target bypasses
     """
     # Step 0: normalize to NFC so NFD-encoded characters are in canonical form
     # before any string comparison or pattern matching.
@@ -145,5 +193,6 @@ def validate_path(path: str, root: str) -> str:
 
     assert_inside_root(full_path, resolved_root)
     assert_no_symlinked_parents(full_path, resolved_root)
+    _assert_relative_hidden_segments(full_path, resolved_root)
 
     return full_path
