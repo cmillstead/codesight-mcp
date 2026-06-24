@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/tests-2495-brightgreen?style=flat-square" alt="Tests">
 </p>
 
-An **MCP server** that indexes local and GitHub codebases via tree-sitter AST parsing, then exposes 34 tools for symbol retrieval, code graph traversal, and impact analysis — all with byte-offset precision to cut token costs by ~99% compared to sending full files. Supports 66 languages.
+An **MCP server** that indexes local and GitHub codebases via tree-sitter AST parsing, then exposes 34 operations through a single `query` dispatch tool for symbol retrieval, code graph traversal, and impact analysis — all with byte-offset precision to cut token costs by ~99% compared to sending full files. Supports 66 languages.
 
 Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gravelle, with code graph techniques from [CodeGraphContext](https://github.com/CodeGraphContext/CodeGraphContext) and security patterns from [basalt-mcp](https://github.com/cmillstead/basalt-mcp).
 
@@ -23,7 +23,7 @@ Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gra
 - [Features](#features)
 - [Supported Languages](#supported-languages)
 - [Quick Start](#quick-start)
-- [Tools Reference](#tools)
+- [Operations Reference](#operations)
 - [Code Graph & Relationship Analysis](#code-graph--relationship-analysis)
 - [Security Model](#security-model)
 - [Git Hooks](#git-hooks-auto-reindex-on-commit-and-push)
@@ -53,7 +53,7 @@ Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gra
 - **6-step path validation chain** — null bytes, traversal, limits, resolution, containment, symlinks
 - **Content boundary markers** — indirect prompt injection defense (Microsoft spotlighting research)
 - **Error sanitization** — raw exceptions never reach the AI; system paths are always stripped
-- **MCP ToolAnnotations** — readOnlyHint, destructiveHint, idempotentHint, openWorldHint on all 34 tools for client permission decisions
+- **Single dispatch tool** — one `query(operation, params)` MCP tool exposes all 34 operations; output from untrusted operations is framed with `<UNTRUSTED_OUTPUT>` markers to resist indirect prompt injection
 - **2,495 tests** — adversarial, security, integration, benchmark, fuzz, and stress coverage with real temp directories
 
 ---
@@ -80,42 +80,35 @@ uv sync            # recommended — uses lockfile with pinned versions
 
 ### Step 2: Register the MCP server
 
-Use `claude mcp add` to register. This is the recommended approach from Anthropic's [code execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp) pattern — the server self-describes its tools via the MCP protocol, and your client discovers them automatically through `tools/list`. No manual tool listing or per-tool permission configuration needed.
+Use `claude mcp add` to register the dispatch wrapper. This registers a single tool named `query` that accepts `{ operation, params }` and dispatches to the codesight engine built in Step 1. Your client discovers it automatically — no per-operation permission configuration needed.
 
 ```bash
-claude mcp add codesight-mcp \
+claude mcp add codesight \
   -e CODESIGHT_ALLOWED_ROOTS=/Users/you/src \
   -e GITHUB_TOKEN=ghp_... \
-  -- /path/to/codesight-mcp/.venv/bin/codesight-mcp
+  -- bun run ~/.claude/servers/codesight/mcp-server.ts
 ```
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `CODESIGHT_ALLOWED_ROOTS` | Yes (local) | Colon-separated directories `index_folder` may access. Denied by default if unset. |
+| `CODESIGHT_ALLOWED_ROOTS` | Yes (local) | Colon-separated directories `index-folder` may access. Denied by default if unset. |
 | `GITHUB_TOKEN` | Yes (GitHub) | Required for private repos; recommended to avoid rate limits on public repos. |
 | `ANTHROPIC_API_KEY` | No | Enables AI-generated symbol summaries. Falls back to docstrings if unset. |
 
-All 34 tools include [MCP ToolAnnotations](https://modelcontextprotocol.io/docs/concepts/tools#annotations) — each tool declares whether it's read-only, destructive, idempotent, or accesses external services. Your MCP client uses these annotations to make permission decisions automatically, so you don't need to configure permissions for each tool individually:
-
-| Annotation | Meaning | Tools |
-|------------|---------|-------|
-| `readOnlyHint: true` | Does not modify any state | 25 tools (search, navigation, analysis) |
-| `destructiveHint: false, idempotentHint: true` | Creates/updates state, safe to retry | `index_repo`, `index_folder` |
-| `destructiveHint: true, idempotentHint: true` | Deletes data, safe to retry | `invalidate_cache` |
-| `openWorldHint: true` | Accesses external services (GitHub, Anthropic) | `index_repo`, `index_folder` |
+The dispatch wrapper exposes **one MCP tool** (`query`) rather than 34 separate tools. Because all 34 operations flow through a single entry point, per-operation `readOnlyHint`/`destructiveHint` annotations do not apply in the usual per-tool way. Instead, the wrapper enforces a trust boundary at the parameter level: path-bearing fields are validated against a trusted prefix before dispatch, and output from operations that return repo-controlled text is wrapped in `<UNTRUSTED_OUTPUT>` framing tags so the consuming agent treats the content as data rather than instructions.
 
 ### Step 3: Index a repository
 
-Before any other tools work, you must index at least one repository. Ask your AI:
+Before any other operations work, you must index at least one repository. Ask your AI:
 
 - **Local folder:** *"Index the repo at ~/src/myproject"*
 - **GitHub repo:** *"Index the GitHub repo owner/myproject"*
 
-The AI calls `index_folder` or `index_repo`, which fetches files, parses ASTs, and extracts symbols into `~/.code-index/`. Subsequent calls skip unchanged files automatically.
+The AI calls `query` with `operation: "index-folder"` or `operation: "index-repo"`, which fetches files, parses ASTs, and extracts symbols into `~/.code-index/`. Subsequent calls skip unchanged files automatically.
 
 ### Step 4: Explore
 
-Once indexed, the AI uses `get_repo_outline`, `search_symbols`, and `get_symbol` to navigate your codebase — retrieving only the symbols it needs instead of entire files.
+Once indexed, the AI uses the `query` tool with operations `get-repo-outline`, `search-symbols`, and `get-symbol` to navigate your codebase — retrieving only the symbols it needs instead of entire files.
 
 ### Step 5 (optional): Add a CLAUDE.md to indexed repos
 
@@ -124,94 +117,95 @@ Add a `CLAUDE.md` to each indexed repo so Claude Code prefers codesight-mcp over
 ```markdown
 ## Code Navigation
 
-This repo is indexed in codesight-mcp. Use codesight-mcp MCP tools for code
-exploration instead of reading full files:
+This repo is indexed in codesight-mcp. Use the `mcp__codesight__query` dispatch
+tool for all code exploration instead of reading full files. Pass `operation`
+(kebab-case) and `params` (object):
 
-- `search_symbols` — find functions/classes/types by name or description
-- `get_file_outline` — all symbols in a file with signatures
-- `get_symbol` — full source of a specific symbol
-- `get_repo_outline` — directory structure and language breakdown
-- `get_callers` / `get_callees` — call graph navigation
-- `get_call_chain` — trace execution paths between two symbols
-- `get_impact` — see what's affected by changing a symbol
+- `search-symbols` — find functions/classes/types by name or description
+- `get-file-outline` — all symbols in a file with signatures
+- `get-symbol` — full source of a specific symbol
+- `get-repo-outline` — directory structure and language breakdown
+- `get-callers` / `get-callees` — call graph navigation
+- `get-call-chain` — trace execution paths between two symbols
+- `get-impact` — see what's affected by changing a symbol
 
 Use `Read` only for content that isn't a named symbol (config files, etc).
 ```
 
 ---
 
-## Tools
+## Operations
 
-codesight-mcp exposes **34 MCP tools** organized into eight categories:
+codesight-mcp exposes **34 operations** through a single `query` dispatch tool, organized into eight categories. Invoke each as `mcp__codesight__query({operation: "<name>", params: {...}})`.
 
 ### Indexing
 
-| Tool | Description |
-|------|-------------|
-| `index_repo` | Index a GitHub repository (fetch, parse ASTs, extract symbols) |
-| `index_folder` | Index a local folder (walk, parse ASTs, extract symbols) |
-| `list_repos` | List all indexed repositories |
-| `invalidate_cache` | Delete an index to force full re-index |
+| Operation | Description |
+|-----------|-------------|
+| `index-repo` | Index a GitHub repository (fetch, parse ASTs, extract symbols) |
+| `index-folder` | Index a local folder (walk, parse ASTs, extract symbols) |
+| `list-repos` | List all indexed repositories |
+| `invalidate-cache` | Delete an index to force full re-index |
 
 ### Navigation
 
-| Tool | Description |
-|------|-------------|
-| `get_repo_outline` | High-level overview: directories, file counts, language breakdown |
-| `get_file_tree` | File tree of an indexed repo, optionally filtered by path prefix |
-| `get_file_outline` | All symbols in a file with signatures and summaries |
-| `get_symbol` | Full source code of a specific symbol (byte-offset retrieval) |
-| `get_symbols` | Batch retrieval of multiple symbols in one call |
-| `get_symbol_context` | Symbol + sibling symbols + parent class info in one call |
+| Operation | Description |
+|-----------|-------------|
+| `get-repo-outline` | High-level overview: directories, file counts, language breakdown |
+| `get-file-tree` | File tree of an indexed repo, optionally filtered by path prefix |
+| `get-file-outline` | All symbols in a file with signatures and summaries |
+| `get-symbol` | Full source code of a specific symbol (byte-offset retrieval) |
+| `get-symbols` | Batch retrieval of multiple symbols in one call |
+| `get-symbol-context` | Symbol + sibling symbols + parent class info in one call |
+| `get-key-symbols` | Rank symbols by structural importance using PageRank on the call graph |
 
 ### Search
 
-| Tool | Description |
-|------|-------------|
-| `search_symbols` | Search symbols by name, signature, summary, or docstring |
-| `search_text` | Full-text search across indexed files (matches against redacted content) |
-| `search_references` | Text search enriched with enclosing symbol context per hit |
+| Operation | Description |
+|-----------|-------------|
+| `search-symbols` | Search symbols by name, signature, summary, or docstring |
+| `search-text` | Full-text search across indexed files (matches against redacted content) |
+| `search-references` | Text search enriched with enclosing symbol context per hit |
 
 ### Code Graph
 
-| Tool | Description |
-|------|-------------|
-| `get_callers` | Find all functions that call a given symbol |
-| `get_callees` | Find all functions called by a given symbol |
-| `get_call_chain` | Trace the execution path between two symbols (BFS with cycle detection) |
-| `get_type_hierarchy` | Show inheritance tree — parents and children of a class |
-| `get_imports` | Show import relationships for a file or symbol |
-| `get_impact` | Impact analysis — everything affected downstream of a change |
+| Operation | Description |
+|-----------|-------------|
+| `get-callers` | Find all functions that call a given symbol |
+| `get-callees` | Find all functions called by a given symbol |
+| `get-call-chain` | Trace the execution path between two symbols (BFS with cycle detection) |
+| `get-type-hierarchy` | Show inheritance tree — parents and children of a class |
+| `get-imports` | Show import relationships for a file or symbol |
+| `get-impact` | Impact analysis — everything affected downstream of a change |
+| `get-diagram` | Generate Mermaid diagrams — call graphs, type hierarchies, import trees, and impact diagrams |
 
 ### Analysis & Visualization
 
-| Tool | Description |
-| :--- | :--- |
-| `analyze_complexity` | Find the most complex/risky symbols — cyclomatic complexity, cognitive complexity, nesting depth, fan-in/fan-out, composite risk score. Supports path filtering and sort modes. |
-| `get_key_symbols` | Rank symbols by structural importance using PageRank on the call graph. Identifies the most connected and depended-upon symbols. |
-| `get_diagram` | Generate Mermaid diagrams — call graphs, type hierarchies, import trees, and impact diagrams from the code graph. |
-| `get_dead_code` | Find unreferenced symbols — functions and classes with zero callers or importers. |
-| `get_status` | Server status — storage configuration, index stats, and feature flags. |
-| `get_usage_stats` | Per-tool call counts, error rates, average response times, and uncalled tools. |
+| Operation | Description |
+| :-------- | :---------- |
+| `analyze-complexity` | Find the most complex/risky symbols — cyclomatic complexity, cognitive complexity, nesting depth, fan-in/fan-out, composite risk score. Supports path filtering and sort modes. |
+| `get-dead-code` | Find unreferenced symbols — functions and classes with zero callers or importers. |
+| `get-status` | Server status — storage configuration, index stats, and feature flags. |
+| `get-usage-stats` | Per-operation call counts, error rates, average response times, and uncalled operations. |
 | `verify` | Verify index integrity — checksums, symbol consistency, and file existence. |
-| `lint_index` | Audit index quality — missing fields, orphaned symbols, stale data. |
+| `lint-index` | Audit index quality — missing fields, orphaned symbols, stale data. |
 
 ### Security
 
-| Tool | Description |
-|------|-------------|
-| `scan_security` | Scan symbols for dangerous API usage patterns (19 OWASP/CWE rules) |
-| `generate_sbom` | Generate Software Bill of Materials (CycloneDX, SPDX, or internal JSON) |
-| `check_licenses` | Analyze dependency licenses from lockfiles and flag risks |
-| `trace_taint` | Forward BFS source-to-sink taint analysis via code graph |
+| Operation | Description |
+|-----------|-------------|
+| `scan-security` | Scan symbols for dangerous API usage patterns (19 OWASP/CWE rules) |
+| `generate-sbom` | Generate Software Bill of Materials (CycloneDX, SPDX, or internal JSON) |
+| `check-licenses` | Analyze dependency licenses from lockfiles and flag risks |
+| `trace-taint` | Forward BFS source-to-sink taint analysis via code graph |
 
 ### Dependencies & Diffing
 
-| Tool | Description |
-|------|-------------|
-| `get_dependencies` | External vs internal import analysis — which packages are used and by which files |
-| `compare_symbols` | Symbol-level diff between two indexed versions using content hashes |
-| `get_changes` | Map git diff to affected symbols with optional downstream impact analysis |
+| Operation | Description |
+|-----------|-------------|
+| `get-dependencies` | External vs internal import analysis — which packages are used and by which files |
+| `compare-symbols` | Symbol-level diff between two indexed versions using content hashes |
+| `get-changes` | Map git diff to affected symbols with optional downstream impact analysis |
 
 ---
 
@@ -326,11 +320,11 @@ When `ANTHROPIC_API_KEY` is set, codesight-mcp sends function and class signatur
 
 | Variable | Description |
 |----------|-------------|
-| `CODESIGHT_ALLOWED_ROOTS` | Colon-separated list of directories `index_folder` is allowed to index. **Required** for local folder indexing — denied by default if unset. Example: `/Users/you/src:/home/you/projects` |
+| `CODESIGHT_ALLOWED_ROOTS` | Colon-separated list of directories `index-folder` is allowed to index. **Required** for local folder indexing — denied by default if unset. Example: `/Users/you/src:/home/you/projects` |
 | `GITHUB_TOKEN` | GitHub personal access token. Required for private repos; strongly recommended to avoid rate limits on public repos. |
 | `ANTHROPIC_API_KEY` | Anthropic API key for AI-generated symbol summaries. Optional — falls back to docstrings if unset. |
 | `CODE_INDEX_PATH` | Custom storage directory for indexes. Default: `~/.code-index/` |
-| `CODESIGHT_NO_REDACT` | Set to `1` to disable secret redaction in tool output. Logs a warning; `search_text` is disabled entirely when set. |
+| `CODESIGHT_NO_REDACT` | Set to `1` to disable secret redaction in tool output. Logs a warning; the `search-text` operation is disabled entirely when set. |
 | `CODESIGHT_READ_ONLY` | Set to `1` to skip filesystem permission operations (fchmod/mkdir). Used automatically for non-destructive CLI commands in sandboxed environments. |
 | `CODESIGHT_USAGE_LOG` | File path for persistent JSONL usage log. Without this, usage records are in-memory only (lost on restart). |
 | `CODESIGHT_USAGE_ENABLED` | Set to `0` to disable usage logging. Default: `1` (enabled). |
@@ -362,10 +356,10 @@ Without this extra, passing semantic params returns a helpful error explaining w
 
 ```python
 # Find by intent, not exact name
-search_symbols(query="the function that validates credentials", semantic=True)
+mcp__codesight__query(operation="search-symbols", params={"repo": "myproject", "query": "the function that validates credentials", "semantic": True})
 
 # Pure semantic search
-search_symbols(query="password hashing utility", semantic_only=True)
+mcp__codesight__query(operation="search-symbols", params={"repo": "myproject", "query": "password hashing utility", "semanticOnly": True})
 ```
 
 ### Environment Variables
