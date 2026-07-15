@@ -27,29 +27,13 @@ from .core.limits import (
 )
 from .core.rate_limiting import _rate_limit
 from .core.usage_logging import UsageLogger, UsageRecord
-from .tools.registry import get_all_specs
+from .tools.registry import get_all_specs, load_all_specs
 from .tools.get_usage_stats import _make_handler as _make_usage_handler
 from .cli_format import format_result as _format_result
 
-# Import all tool modules to trigger ToolSpec registration
-from .tools import (  # noqa: F401
-    index_repo, index_folder, list_repos, get_file_tree,
-    get_file_outline, get_symbol, search_symbols,
-    search_text, invalidate_cache, get_repo_outline,
-    get_callers, get_callees, get_call_chain,
-    get_type_hierarchy, get_imports, get_impact,
-    get_dead_code, get_status,
-    analyze_complexity, get_key_symbols, get_diagram,
-    get_symbol_context, search_references, get_dependencies,
-    compare_symbols, get_changes,
-    get_usage_stats,
-    verify,
-    lint_index,
-    generate_sbom,
-    check_licenses,
-    scan_security,
-    trace_taint,
-)
+# Populate the registry via the single canonical tool-import list -- see
+# tools/registry.py:load_all_specs for the list scripts/tests also use.
+load_all_specs()
 
 # ADV-LOW-7: Read CODE_INDEX_PATH once at startup so subsequent env mutations
 # do not change the storage path used by _validate_storage_path().
