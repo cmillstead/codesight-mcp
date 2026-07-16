@@ -144,6 +144,8 @@ Security and infrastructure primitives used by all other layers:
 | `locking.py` | File locking | `exclusive_file_lock()` context manager, `ensure_private_dir()` |
 | `security.py` | Secret detection | `is_secret_file()`, `sanitize_repo_identifier()`, `sanitize_signature_for_api()` |
 | `discovery.py` | File discovery | `discover_local_files()` with gitignore, binary detection, symlink filtering |
+| `freshness.py` | Index-age parsing + staleness policy | Backs get_status/list_repos staleness |
+| `platform_check.py` | Startup guard | Fail-fast POSIX-only startup guard |
 
 ### Summarizer Layer (`summarizer/`)
 

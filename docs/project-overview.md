@@ -69,7 +69,9 @@ server.py (286 lines)
   │   ├── errors.py       — Error sanitization
   │   ├── limits.py       — Resource limit constants
   │   ├── rate_limiting.py — Persistent file-backed rate limiter
-  │   └── locking.py      — Advisory file locks for index serialization
+  │   ├── locking.py      — Advisory file locks for index serialization
+  │   ├── freshness.py    — Index-age parsing + staleness policy (get_status/list_repos)
+  │   └── platform_check.py — Fail-fast POSIX-only startup guard
   │
   ├── storage/         (index persistence)
   │   └── index_store.py  — JSON/gzip index read/write/delete, atomic writes

@@ -6,6 +6,20 @@ The CI pipeline runs on GitHub Actions for every push to `main` and every pull r
 
 ## Pipeline Structure
 
+### Lint Job
+
+- **Tool**: ruff (`uv run --with ruff ruff check .`)
+- **Python**: 3.12 (explicit install via uv)
+- **Timeout**: 5 minutes
+
+### Typecheck Job
+
+- **Tool**: mypy, scoped via the `typecheck` dependency group
+- **Dependencies**: Frozen lockfile (`uv sync --frozen --group typecheck`)
+- **Command**: `uv run --group typecheck mypy`
+- **Python**: 3.12 (explicit install via uv)
+- **Timeout**: 10 minutes
+
 ### Test Job
 
 - **Sharding**: 4 parallel shards via pytest-split for faster execution
