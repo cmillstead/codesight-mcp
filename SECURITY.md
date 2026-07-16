@@ -33,7 +33,7 @@ The threat model assumes:
 | Binary confusion | Dual-stage detection: extension-based filtering plus null-byte content sniffing |
 | Credential logging | `_RedactAuthFilter` suppresses httpx log records containing auth headers at all log levels |
 | Supply chain | `uv.lock` pins exact versions; CI uses `uv sync --frozen` for lockfile integrity; GitHub Actions are SHA-pinned; dependency upper bounds prevent surprise major upgrades |
-| Summarizer injection | Injection phrases stripped from summaries (full substring scan, not prefix-only); degraded-mode parse returns empty on missing nonce delimiters; symbol kind validated against allowlist before prompt interpolation; system/user prompt split uses per-batch nonce marker |
+| Summarizer injection | Injection phrases stripped from summaries via a tiered word-boundary matcher — strong single-token markers and strong multi-word signatures fire unconditionally, ambiguous phrases fire only when corroborated (see [Injection Phrase Detection](#injection-phrase-detection)); degraded-mode parse returns empty on missing nonce delimiters; symbol kind validated against allowlist before prompt interpolation; system/user prompt split uses per-batch nonce marker |
 | Env var redirection | `ANTHROPIC_BASE_URL`, `GITHUB_TOKEN`, `CODE_INDEX_PATH`, `CODESIGHT_NO_REDACT`, and `ALLOWED_ROOTS` frozen at module import time; runtime mutation cannot redirect API calls or bypass restrictions |
 | Graph traversal DoS | BFS call-chain capped at 5 paths; all traversal depths clamped to [1, 50]; SHA-256 fingerprint for cache keys |
 | Index poisoning | `load_index()` rejects source_files with traversal sequences or control characters; validates owner/name as strings; validates kind against allowlist; re-sanitizes all text fields; validates content_hash format |
@@ -100,11 +100,12 @@ Every string field from untrusted sources — including `id`, `name`, `file`, `s
 
 ## Injection Phrase Detection
 
-Symbol summaries are scanned for injection phrases before storage (on generation, and re-scanned on index load and incremental save). Matching is word-boundary bounded — each phrase is anchored with `(?<!\w)...(?!\w)` so inflected/compound text (`overrides`, `act assign`, `react as`, `ecosystem:`) does not false-positive, while markup/role tokens (`<|`, `[inst]`, `<<sys>>`) match literally since they cannot take a word boundary.
+Symbol summaries are scanned for injection phrases before storage (on generation, and re-scanned on index load and incremental save). Matching is word-boundary bounded: each phrase's leading and trailing guards are applied independently based on the first/last character of the phrase, so `(?<!\w)` and `(?!\w)` are each only added on the side that ends in a word character. This means inflected/compound text (`overrides`, `act assign`, `react as`, `ecosystem:`) does not false-positive, markup/role tokens (`<|`, `[inst]`, `<<sys>>`) match literally since they cannot take a word boundary, and colon-suffixed markers (`system:`, `assistant:`, `user:`, `human:`) match with or without a trailing space (`system:evil` and `system: evil` both fire — no trailing guard is added after a non-word terminator).
 
-Phrases are split into two tiers:
-- **Strong** (`ignore`, `system:`, `disregard`, `act as`, `[inst]`, `<|`, and similar) fire unconditionally — a single occurrence strips the summary to an empty string.
-- **Weak/ambiguous** (`important:`, `override`, `you are`, bare `assistant`) fire only when corroborated — either a strong phrase or a second distinct weak phrase co-occurs in the same normalized text. This avoids false positives on ordinary prose ("Override the default timeout", "you are responsible for closing the handle") while still catching combined attacks ("IMPORTANT: override safety") and role-hijack preambles ("you are a helpful assistant").
+Phrases and patterns are split into three tiers:
+- **Strong single-token** (`ignore`, `system:`, `disregard`, `act as`, `[inst]`, `<|`, and similar) fire unconditionally — a single occurrence strips the summary to an empty string.
+- **Strong multi-word signatures**: an imperative injection verb (`ignore`, `disregard`, `override`, `forget`, `discard`) followed by an optional quantifier/article (`all`, `any`, `these`, `those`, `the`), a required position word (`prior`, `previous`, `above`, `preceding`, `earlier`, `foregoing`, `following`, `initial`, `original`, `system`), and a required injection object (`instruction(s)`, `directive(s)`, `prompt(s)`, `rule(s)`, `command(s)`, `guardrail(s)`) — e.g. "override all prior instructions", "disregard all previous rules". Fires unconditionally, like the single-token tier. Requiring both the position word AND the object keeps this tight enough to avoid benign docstring collisions such as "override the default timeout" (no position word) or "override the following method" (position word present, but "method" is not in the injection-object set).
+- **Weak/ambiguous** (`important:`, `override`, `you are`, bare `assistant`) fire only when corroborated — either a strong phrase/signature or a second distinct weak phrase co-occurs in the same normalized text. This avoids false positives on ordinary prose ("Override the default timeout", "you are responsible for closing the handle") while still catching combined attacks ("IMPORTANT: override safety") and role-hijack preambles ("you are a helpful assistant").
 
 Any summary that matches is stripped to an empty string and the triggering rule id (never the matched user text) is aggregated into a per-operation counter; if any summaries were discarded, one `logger.info` record is emitted per operation with the total count and a rule-id breakdown.
 
@@ -161,7 +162,7 @@ All tools are rate-limited at 60 calls per minute per tool and 300 calls per min
 - Missing nonce delimiters entirely: returns empty summaries (no degraded-mode parsing of untrusted text)
 - Batch size capped at `MAX_BATCHES_PER_INDEX=50`
 - Symbol `kind` validated against `_VALID_KINDS` allowlist before prompt interpolation (prevents kind-injection attacks)
-- Injection phrase blocklist: 20 phrases including "disregard", "forget", "override", "new instruction", "you must", "you are", "respond with", "reply with", "human:", "<|", "|>", "execute ", "run this"
+- Injection phrase matcher, tiered (see [Injection Phrase Detection](#injection-phrase-detection)): strong single-token markers (e.g. "ignore", "disregard", "system:", "act as", "<|") fire unconditionally; strong multi-word signatures (imperative verb + optional quantifier + position word + injection object, e.g. "override all prior instructions") fire unconditionally; weak/ambiguous phrases (e.g. "important:", "override", "you are") fire only when corroborated by a second signal in the same normalized text
 - System/user prompt split uses per-batch nonce marker (`<<<SPLIT_{nonce}>>>`) to prevent signature injection of the static delimiter
 - Signatures sanitized (newlines stripped, length capped) before inclusion in prompts
 - `trust_env=False` on both httpx and Anthropic SDK clients
@@ -207,7 +208,7 @@ The test suite contains **1,818 tests** across adversarial, security, integratio
 - Schema validation in load_index (type checks, kind validation, hash format)
 - Rate limit enforcement and symlink-resistant state file handling
 - Gzip decompression bomb rejection
-- Injection phrase blocklist (20 phrases, positive and negative cases)
+- Injection phrase matcher: strong single-token markers, strong multi-word signatures, and corroborated-weak ambiguous phrases (positive and negative cases, including colon-suffixed markers with no trailing space)
 - Env var freezing (ANTHROPIC_BASE_URL, GITHUB_TOKEN mutation after import)
 - Nonce-based prompt splitting and delimiter protection
 - Double-close fd prevention in safe_write_content

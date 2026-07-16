@@ -107,23 +107,54 @@ def _build_tier_pattern(phrases: tuple[str, ...], prefix: str) -> re.Pattern[str
     """Compile one alternation for a phrase tier with rule-id-bearing named
     groups so `match.lastgroup` IS the stable rule id (never the phrase
     text or user text).
+
+    The leading and trailing \\w-boundary guards are applied independently
+    based on the FIRST and LAST character of the stripped phrase. A phrase
+    ending in a non-word character (e.g. "system:", "assistant:") gets no
+    trailing guard, since (?!\\w) after a colon would otherwise block a
+    no-space attack form like "system:evil" (audit fix: colon-phrase
+    boundary bug). Phrases beginning with a non-word character (markup
+    tokens like "<|", "[inst]") get no leading guard for the same reason.
     """
     parts = []
     for i, phrase in enumerate(phrases):
         stripped = phrase.strip()
         escaped = re.escape(stripped)
-        if stripped[0].isalnum():
-            pattern = rf"(?<!\w){escaped}(?!\w)"
-        else:
-            # Non-word-ish phrases (markup/role tokens like "<|", "[inst]")
-            # cannot take a \w-style boundary guard — match literally.
-            pattern = escaped
+        lead = r"(?<!\w)" if stripped[0].isalnum() else ""
+        trail = r"(?!\w)" if stripped[-1].isalnum() else ""
+        pattern = f"{lead}{escaped}{trail}"
         parts.append(f"(?P<{prefix}_{i}>{pattern})")
     return re.compile("|".join(parts))
 
 
 _STRONG_INJECTION_PATTERN = _build_tier_pattern(_STRONG_INJECTION_PHRASES, "INJS")
 _WEAK_INJECTION_PATTERN = _build_tier_pattern(_WEAK_INJECTION_PHRASES, "INJW")
+
+# Strong multi-word injection SIGNATURES: an imperative injection verb,
+# optionally followed by a quantifier/article, a REQUIRED position word,
+# and a REQUIRED injection object — e.g. "override all prior instructions".
+# Unlike the single-token strong/weak tiers above, this requires BOTH the
+# position word and the object to co-occur, which keeps it tight enough to
+# avoid benign docstring collisions like "override the default timeout"
+# (no position word) or "override the following method" (position word
+# present, but "method" is not an injection object — the object set is
+# deliberately narrow). Fires unconditionally, like the single-phrase
+# strong tier — checked before the weak-corroboration tier.
+_INJECTION_SIGNATURE_VERBS = r"(?:ignore|disregard|override|forget|discard)"
+_INJECTION_SIGNATURE_QUANTIFIERS = r"(?:(?:all|any|these|those|the)\s+)*"
+_INJECTION_SIGNATURE_POSITIONS = (
+    r"(?:prior|previous|above|preceding|earlier|foregoing|following|"
+    r"initial|original|system)"
+)
+_INJECTION_SIGNATURE_OBJECTS = (
+    r"(?:instruction|directive|prompt|rule|command|guardrail)s?"
+)
+_INJECTION_SIGNATURE_PATTERN = re.compile(
+    r"(?P<INJSIG_0>"
+    rf"\b{_INJECTION_SIGNATURE_VERBS}\b\s+{_INJECTION_SIGNATURE_QUANTIFIERS}"
+    rf"\b{_INJECTION_SIGNATURE_POSITIONS}\b\s+\b{_INJECTION_SIGNATURE_OBJECTS}\b"
+    r")"
+)
 
 # ADV-MED-2: Valid symbol kinds — only these are interpolated into prompts.
 _VALID_KINDS = frozenset({
@@ -189,15 +220,20 @@ def _match_injection_rule(text: str) -> str | None:
     """Return the stable rule id (e.g. "INJS_3") of the first injection
     phrase that fires, or None. Never returns user text.
 
-    Strong phrases fire unconditionally. Weak phrases fire only when
-    corroborated within the same normalized variant: either a strong
-    phrase is also present, or a second distinct weak phrase is present.
-    Both normalized variants (see _normalize_variants) are checked.
+    Strong single-token phrases and strong multi-word signatures both fire
+    unconditionally. Weak phrases fire only when corroborated within the
+    same normalized variant: either a strong phrase/signature is also
+    present, or a second distinct weak phrase is present. Both normalized
+    variants (see _normalize_variants) are checked.
     """
     for variant in _normalize_variants(text):
         strong_match = _STRONG_INJECTION_PATTERN.search(variant)
         if strong_match:
             return strong_match.lastgroup
+
+        signature_match = _INJECTION_SIGNATURE_PATTERN.search(variant)
+        if signature_match:
+            return signature_match.lastgroup
 
         weak_matches = list(_WEAK_INJECTION_PATTERN.finditer(variant))
         distinct_weak_groups = {m.lastgroup for m in weak_matches}

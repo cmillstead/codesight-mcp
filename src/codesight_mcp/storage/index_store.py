@@ -69,6 +69,32 @@ def _sanitize_list_item(item: str) -> str:
     return sanitize_signature_for_api(cleaned)[:200]
 
 
+def _discard_injected_summary(sym: dict, counts: "Counter[str]") -> None:
+    """Clear `sym["summary"]` if it matches an injection rule, tallying the
+    fired rule id in `counts`. No-op if `summary` is missing, not a string,
+    or does not match. Shared by _sanitize_loaded_symbols and
+    incremental_save so the discard-and-tally logic lives in one place.
+    """
+    if isinstance(sym.get("summary"), str):
+        rule = _match_injection_rule(sym["summary"])
+        if rule:
+            sym["summary"] = ""
+            counts[rule] += 1
+
+
+def _log_injection_telemetry(counts: "Counter[str]") -> None:
+    """Emit exactly one aggregated log record with rule-id counts if any
+    summaries were discarded. Never logs the matched user text — only the
+    stable rule ids and their counts.
+    """
+    if counts:
+        logger.info(
+            "injection filter discarded %d summaries: %s",
+            sum(counts.values()),
+            dict(counts),
+        )
+
+
 def _safe_gzip_decompress(raw_bytes: bytes, max_size: int = MAX_INDEX_SIZE) -> bytes:
     """Decompress gzip data with a decompressed size cap.
 
@@ -685,11 +711,7 @@ class IndexStore:
                 if fld in sym and isinstance(sym[fld], str):
                     sym[fld] = sanitize_signature_for_api(sym[fld])
             # ADV-MED-3: Clear summaries containing injection phrases
-            if isinstance(sym.get("summary"), str):
-                rule = _match_injection_rule(sym["summary"])
-                if rule:
-                    sym["summary"] = ""
-                    local_counts[rule] += 1
+            _discard_injected_summary(sym, local_counts)
             if "decorators" in sym and isinstance(sym["decorators"], list):
                 sym["decorators"] = [
                     sanitize_signature_for_api(d) if isinstance(d, str) else d
@@ -712,12 +734,7 @@ class IndexStore:
                 if not isinstance(hash_val, str) or not _HASH_RE.fullmatch(hash_val):
                     sym["content_hash"] = ""
 
-        if local_counts:
-            logger.info(
-                "injection filter discarded %d summaries: %s",
-                sum(local_counts.values()),
-                dict(local_counts),
-            )
+        _log_injection_telemetry(local_counts)
 
     def load_index(self, owner: str, name: str) -> Optional[CodeIndex]:
         """Load index from storage. Supports both gzip and legacy JSON formats."""
@@ -949,17 +966,8 @@ class IndexStore:
                 for fld in ("signature", "docstring", "summary"):
                     if fld in sym and isinstance(sym[fld], str):
                         sym[fld] = sanitize_signature_for_api(sym[fld])
-                if isinstance(sym.get("summary"), str):
-                    rule = _match_injection_rule(sym["summary"])
-                    if rule:
-                        sym["summary"] = ""
-                        local_counts[rule] += 1
-            if local_counts:
-                logger.info(
-                    "injection filter discarded %d summaries: %s",
-                    sum(local_counts.values()),
-                    dict(local_counts),
-                )
+                _discard_injected_summary(sym, local_counts)
+            _log_injection_telemetry(local_counts)
 
             # Add new symbols
             all_symbols_dicts = kept_symbols + [self._symbol_to_dict(s) for s in new_symbols]
