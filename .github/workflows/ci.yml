@@ -76,6 +76,10 @@ jobs:
       - name: Install dependencies (frozen)
         run: uv sync --frozen --extra test
 
+      - name: Check doc counts
+        if: matrix.group == 1
+        run: uv run python scripts/check_counts.py
+
       - name: Run tests
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v3
         with:

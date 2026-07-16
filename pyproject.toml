@@ -3,7 +3,7 @@
 # (Risk: a malicious actor could publish 'codesight-mcp' to PyPI.)
 [project]
 name = "codesight-mcp"
-version = "0.1.0"
+version = "0.6.0"
 description = "Security-hardened, token-efficient MCP server for code exploration via tree-sitter AST parsing"
 readme = "README.md"
 requires-python = ">=3.10"
