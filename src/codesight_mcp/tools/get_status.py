@@ -4,6 +4,7 @@ import os
 from typing import Optional
 
 from ..core.boundaries import make_meta
+from ..core.freshness import INDEX_AGE_THRESHOLD_DAYS
 from ..security import _NO_REDACT
 from ..storage import INDEX_VERSION
 from ._common import timed, elapsed_ms, _get_shared_store
@@ -37,6 +38,20 @@ def get_status(storage_path: Optional[str] = None) -> dict:
             "timing_ms": ms,
         },
     }
+
+    # Staleness surface — aggregate counts only, no repo-name strings
+    # (get_status is a trusted envelope).
+    aged = sum(1 for r in repos if r.get("age_threshold_exceeded") is True)
+    known = [r["index_age_days"] for r in repos if r.get("index_age_days") is not None]
+    result["aged_repo_count"] = aged
+    if known:
+        result["oldest_index_age_days"] = max(known)
+    if aged:
+        result["staleness_warning"] = (
+            f"{aged} indexed repo(s) exceed the {INDEX_AGE_THRESHOLD_DAYS}-day freshness "
+            "threshold; re-index with `codesight-mcp index-folder --path <dir>` or "
+            "`codesight-mcp index-repo <url>`."
+        )
 
     # ADV-LOW-11: Warn when redaction is disabled
     if _NO_REDACT:

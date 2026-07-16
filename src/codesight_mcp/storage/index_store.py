@@ -26,6 +26,7 @@ from ..summarizer.batch_summarize import (  # noqa: E402
     _match_injection_rule,
     _VALID_KINDS,
 )
+from ..core.freshness import age_threshold_exceeded, index_age_days, valid_git_head  # noqa: E402
 from ..core.limits import MAX_INDEX_SIZE, MAX_FILE_SIZE  # noqa: E402
 from ..core.locking import exclusive_file_lock, _UMASK_LOCK  # noqa: E402
 from ..core.validation import validate_path, ValidationError, is_within  # noqa: E402
@@ -423,6 +424,7 @@ class IndexStore:
             "file_count": len(index.source_files),
             "languages": index.languages,
             "index_version": index.index_version,
+            "git_head": index.git_head,
         }
         meta_path = self._metadata_path(index.owner, index.name)
         self._atomic_write(meta_path, json.dumps(meta))
@@ -1077,6 +1079,9 @@ class IndexStore:
                 "file_count": data["file_count"],
                 "languages": data["languages"],
                 "index_version": data.get("index_version", 1),
+                "index_age_days": index_age_days(data["indexed_at"]),
+                "age_threshold_exceeded": age_threshold_exceeded(data["indexed_at"]),
+                "git_head": valid_git_head(data.get("git_head")),
             })
 
         # Phase 2: fall back to full index reads for repos without sidecars
@@ -1131,6 +1136,9 @@ class IndexStore:
                         "file_count": len(data["source_files"]),
                         "languages": data["languages"],
                         "index_version": data.get("index_version", 1),
+                        "index_age_days": index_age_days(data["indexed_at"]),
+                        "age_threshold_exceeded": age_threshold_exceeded(data["indexed_at"]),
+                        "git_head": valid_git_head(data.get("git_head")),
                     })
                 except (OSError, gzip.BadGzipFile, json.JSONDecodeError, KeyError,
                         UnicodeDecodeError, ValueError) as exc:
