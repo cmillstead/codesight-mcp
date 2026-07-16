@@ -1,7 +1,8 @@
 """Tests for the canonical registry bootstrap (load_all_specs).
 
-load_all_specs() must be the single side-effect-free entry point that
-populates the tool registry, without requiring an import of server.py.
+load_all_specs() is the single entry point that populates the tool registry
+via import side-effects, and is idempotent -- safe to call repeatedly without
+requiring an import of server.py.
 """
 
 from codesight_mcp.tools.registry import load_all_specs, get_all_specs
