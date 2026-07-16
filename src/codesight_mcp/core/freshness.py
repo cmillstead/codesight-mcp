@@ -17,9 +17,9 @@ def parse_indexed_at(value: object) -> datetime | None:
         text = text[:-1] + "+00:00"
     try:
         dt = datetime.fromisoformat(text)
-    except (ValueError, TypeError):
+        return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+    except (ValueError, TypeError, OverflowError):
         return None
-    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
 
 
 def _raw_age_days(value: object, now: datetime | None = None) -> float | None:
@@ -43,7 +43,7 @@ def index_age_days(value: object, *, now: datetime | None = None) -> float | Non
 
 
 def age_threshold_exceeded(
-    value: object, *, threshold_days: int = INDEX_AGE_THRESHOLD_DAYS,
+    value: object, *, threshold_days: int | float = INDEX_AGE_THRESHOLD_DAYS,
     now: datetime | None = None,
 ) -> bool | None:
     """True if the UNROUNDED age strictly exceeds threshold (so 7d+1s IS

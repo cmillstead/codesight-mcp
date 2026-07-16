@@ -46,6 +46,28 @@ def test_parse_indexed_at_returns_none_for_non_string():
     assert parse_indexed_at(12345) is None
 
 
+def test_parse_indexed_at_returns_none_instead_of_raising_on_min_year_overflow():
+    """An in-range ISO stamp whose UTC conversion underflows MINYEAR must
+    fail closed (None), not raise OverflowError -- a crafted sidecar with
+    this value must not crash list_repos()/get_status() for every repo."""
+    assert parse_indexed_at("0001-01-01T00:30:00+01:00") is None
+
+
+def test_parse_indexed_at_returns_none_instead_of_raising_on_max_year_overflow():
+    """Same fail-closed contract at the MAXYEAR boundary."""
+    assert parse_indexed_at("9999-12-31T23:59:00-01:00") is None
+
+
+def test_index_age_days_fails_closed_on_overflowing_stamp():
+    assert index_age_days("0001-01-01T00:30:00+01:00") is None
+    assert index_age_days("9999-12-31T23:59:00-01:00") is None
+
+
+def test_age_threshold_exceeded_fails_closed_on_overflowing_stamp():
+    assert age_threshold_exceeded("0001-01-01T00:30:00+01:00") is None
+    assert age_threshold_exceeded("9999-12-31T23:59:00-01:00") is None
+
+
 # --- index_age_days / age_threshold_exceeded ---------------------------
 
 def test_fresh_index_is_not_threshold_exceeded():
@@ -95,7 +117,7 @@ def test_valid_git_head_accepts_short_hex():
     assert valid_git_head("deadbeef") == "deadbeef"
 
 
-@pytest.mark.parametrize("bad", ["", None, "nothex", "g" * 40, "a" * 64])
+@pytest.mark.parametrize("bad", ["", None, "nothex", "g" * 40, "a" * 64, "ABCDEF1"])
 def test_valid_git_head_rejects_malformed_values(bad):
     assert valid_git_head(bad) is None
 

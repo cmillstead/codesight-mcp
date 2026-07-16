@@ -3,6 +3,7 @@
 get_status is a TRUSTED envelope: it must report aged-repo counts without
 leaking any attacker-influenceable repo-name string into the response.
 """
+import gzip
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -24,7 +25,6 @@ def _backdate_repo(tmp_path, owner: str, name: str, days: int) -> None:
     meta["indexed_at"] = old_stamp
     meta_path.write_text(json.dumps(meta))
 
-    import gzip
     index_path = tmp_path / f"{owner}__{name}.json.gz"
     with gzip.open(index_path, "rt", encoding="utf-8") as f:
         data = json.load(f)
