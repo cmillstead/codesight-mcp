@@ -344,6 +344,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 async def run_server():
     """Run the MCP server."""
+    ensure_posix()
+
     from mcp.server.stdio import stdio_server
 
     async with stdio_server() as (read_stream, write_stream):
