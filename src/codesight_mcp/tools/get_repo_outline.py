@@ -85,5 +85,6 @@ _spec = register(ToolSpec(
         storage_path=storage_path,
     ),
     required_args=["repo"],
+    untrusted=True,
     annotations=ToolAnnotations(title="Get Repository Outline", readOnlyHint=True, openWorldHint=False),
 ))

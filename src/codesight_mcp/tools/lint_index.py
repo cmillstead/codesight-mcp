@@ -180,6 +180,7 @@ _spec = register(ToolSpec(
         repo=args["repo"], storage_path=storage_path,
     ),
     required_args=["repo"],
+    untrusted=True,
     annotations=ToolAnnotations(
         title="Lint Index",
         readOnlyHint=True,

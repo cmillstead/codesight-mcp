@@ -125,9 +125,17 @@ async def test_destructive_tools_have_consent_warning():
 
 @pytest.mark.asyncio
 async def test_safe_tools_have_no_untrusted_warning():
-    """Non-source tools should not carry the untrusted-content warning."""
+    """Non-source tools should not carry the untrusted-content warning.
+
+    list_repos, get_file_tree, and get_repo_outline are deliberately NOT
+    listed here -- they return disk-derived data (repo names, file paths,
+    directory names) and are marked untrusted=True to match their actual
+    _meta.contentTrust (see test_tool_trust_invariant.py). Only tools that
+    return purely server-computed metadata (no disk-derived strings) belong
+    in this set.
+    """
     tools = await list_tools()
-    safe_tools = {"list_repos", "get_file_tree", "get_repo_outline"}
+    safe_tools = {"get_status", "get_usage_stats"}
 
     for tool in tools:
         if tool.name in safe_tools:

@@ -56,5 +56,6 @@ _spec = register(ToolSpec(
     },
     handler=lambda args, storage_path: list_repos(storage_path=storage_path),
     required_args=[],
+    untrusted=True,
     annotations=ToolAnnotations(title="List Repositories", readOnlyHint=True, openWorldHint=False),
 ))
