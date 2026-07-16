@@ -12,7 +12,7 @@ import re
 import stat as stat_module
 import threading
 import time
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,7 +22,10 @@ logger = logging.getLogger(__name__)
 
 from ..parser.symbols import Symbol  # noqa: E402
 from ..security import sanitize_repo_identifier, sanitize_signature_for_api  # noqa: E402
-from ..summarizer.batch_summarize import _contains_injection_phrase, _VALID_KINDS  # noqa: E402
+from ..summarizer.batch_summarize import (  # noqa: E402
+    _match_injection_rule,
+    _VALID_KINDS,
+)
 from ..core.limits import MAX_INDEX_SIZE, MAX_FILE_SIZE  # noqa: E402
 from ..core.locking import exclusive_file_lock, _UMASK_LOCK  # noqa: E402
 from ..core.validation import validate_path, ValidationError, is_within  # noqa: E402
@@ -676,13 +679,17 @@ class IndexStore:
         # ADV-LOW-6: Validate content_hash format — must be a 64-char lowercase hex
         # string (SHA-256). Discard malformed hashes to prevent verify=True from
         # reporting a spurious mismatch against an arbitrary attacker-controlled string.
+        local_counts: Counter[str] = Counter()
         for sym in symbols:
             for fld in ("signature", "docstring", "summary", "name", "file"):
                 if fld in sym and isinstance(sym[fld], str):
                     sym[fld] = sanitize_signature_for_api(sym[fld])
             # ADV-MED-3: Clear summaries containing injection phrases
-            if isinstance(sym.get("summary"), str) and _contains_injection_phrase(sym["summary"]):
-                sym["summary"] = ""
+            if isinstance(sym.get("summary"), str):
+                rule = _match_injection_rule(sym["summary"])
+                if rule:
+                    sym["summary"] = ""
+                    local_counts[rule] += 1
             if "decorators" in sym and isinstance(sym["decorators"], list):
                 sym["decorators"] = [
                     sanitize_signature_for_api(d) if isinstance(d, str) else d
@@ -704,6 +711,13 @@ class IndexStore:
             if hash_val is not None:
                 if not isinstance(hash_val, str) or not _HASH_RE.fullmatch(hash_val):
                     sym["content_hash"] = ""
+
+        if local_counts:
+            logger.info(
+                "injection filter discarded %d summaries: %s",
+                sum(local_counts.values()),
+                dict(local_counts),
+            )
 
     def load_index(self, owner: str, name: str) -> Optional[CodeIndex]:
         """Load index from storage. Supports both gzip and legacy JSON formats."""
@@ -930,12 +944,22 @@ class IndexStore:
 
             # ADV-LOW-8: Re-sanitize kept symbols' text fields in case redaction
             # rules have been updated since they were last indexed.
+            local_counts: Counter[str] = Counter()
             for sym in kept_symbols:
                 for fld in ("signature", "docstring", "summary"):
                     if fld in sym and isinstance(sym[fld], str):
                         sym[fld] = sanitize_signature_for_api(sym[fld])
-                if isinstance(sym.get("summary"), str) and _contains_injection_phrase(sym["summary"]):
-                    sym["summary"] = ""
+                if isinstance(sym.get("summary"), str):
+                    rule = _match_injection_rule(sym["summary"])
+                    if rule:
+                        sym["summary"] = ""
+                        local_counts[rule] += 1
+            if local_counts:
+                logger.info(
+                    "injection filter discarded %d summaries: %s",
+                    sum(local_counts.values()),
+                    dict(local_counts),
+                )
 
             # Add new symbols
             all_symbols_dicts = kept_symbols + [self._symbol_to_dict(s) for s in new_symbols]

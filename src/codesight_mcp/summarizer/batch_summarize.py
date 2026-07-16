@@ -46,42 +46,84 @@ if _ANTHROPIC_BASE_URL is not None:
 # Prevents runaway token usage for adversarially large symbol lists.
 MAX_BATCHES_PER_INDEX = 50
 
-# Injection phrases that, if found ANYWHERE in a summary (case-insensitive),
-# indicate an attempted prompt injection — replace with empty string.
-# ADV-HIGH-4: full substring scan, not prefix-only.
-# ADV-LOW-11: expanded injection phrase blocklist (defense-in-depth).
-_INJECTION_PHRASES = (
-    "ignore ",
+# Injection phrase matcher, split into two tiers so that ambiguous English
+# phrases ("important:", "override", "you are") that show up constantly in
+# benign prose only fire when corroborated by a second signal, while
+# unambiguous role/control markers fire unconditionally. Every phrase is
+# bounded on both sides with (?<!\w)...(?!\w) so inflected/compound forms
+# ("overrides", "act assign", "react as") do not match — see
+# _build_tier_pattern. Word-ish detection is "first stripped char is
+# alphanumeric"; non-word-ish phrases (markup/role tokens) match literally
+# since they cannot take a \w-boundary and are effectively absent from
+# benign prose.
+#
+# ADV-HIGH-4: full substring scan, not prefix-only (still true — the
+# boundary is on individual PHRASE edges, not on the containing text).
+# ADV-LOW-11 / ADV-LOW-2 v3 / ADV-LOW-4: expanded blocklist (defense-in-depth).
+_STRONG_INJECTION_PHRASES = (
+    "ignore",
     "system:",
     "[inst]",
-    "### ",
     "assistant:",
     "user:",
-    "important:",
-    "disregard ",
-    "forget ",
-    "override ",
+    "human:",
+    "disregard",
+    "forget",
     "new instruction",
-    # ADV-LOW-2 v3: expanded blocklist (defense-in-depth).
     "you must",
-    "you are",
     "respond with",
     "reply with",
-    "human:",
-    "<|",
-    "|>",
-    "execute ",
+    "execute",
     "run this",
-    # ADV-LOW-4: additional injection phrases.
     "note to ai",
     "critical instruction",
     "from now on",
     "act as",
+    "<|",
+    "|>",
     "<<sys>>",
     "[/inst]",
     "<s>",
     "</s>",
 )
+
+# Weak/ambiguous phrases: each fires ONLY when corroborated — a strong
+# phrase co-occurs in the same normalized text, or a second distinct weak
+# phrase co-occurs. "assistant" (bare, no colon) is included alongside
+# "you are" specifically to catch the classic AI role-hijack preamble
+# ("you are a helpful assistant") without flagging ordinary "you are ..."
+# prose (e.g. "you are responsible for closing the handle") — required by
+# tests/security/test_adv_scan_v3.py::TestExpandedBlocklist and the new
+# word-boundary benign-prose regression tests.
+_WEAK_INJECTION_PHRASES = (
+    "important:",
+    "override",
+    "you are",
+    "assistant",
+)
+
+
+def _build_tier_pattern(phrases: tuple[str, ...], prefix: str) -> re.Pattern[str]:
+    """Compile one alternation for a phrase tier with rule-id-bearing named
+    groups so `match.lastgroup` IS the stable rule id (never the phrase
+    text or user text).
+    """
+    parts = []
+    for i, phrase in enumerate(phrases):
+        stripped = phrase.strip()
+        escaped = re.escape(stripped)
+        if stripped[0].isalnum():
+            pattern = rf"(?<!\w){escaped}(?!\w)"
+        else:
+            # Non-word-ish phrases (markup/role tokens like "<|", "[inst]")
+            # cannot take a \w-style boundary guard — match literally.
+            pattern = escaped
+        parts.append(f"(?P<{prefix}_{i}>{pattern})")
+    return re.compile("|".join(parts))
+
+
+_STRONG_INJECTION_PATTERN = _build_tier_pattern(_STRONG_INJECTION_PHRASES, "INJS")
+_WEAK_INJECTION_PATTERN = _build_tier_pattern(_WEAK_INJECTION_PHRASES, "INJW")
 
 # ADV-MED-2: Valid symbol kinds — only these are interpolated into prompts.
 _VALID_KINDS = frozenset({
@@ -123,30 +165,55 @@ _CONFUSABLE_MAP = str.maketrans({
 })
 
 
-def _contains_injection_phrase(text: str) -> bool:
-    """Return True if text contains any injection phrase (case-insensitive).
+def _normalize_variants(text: str) -> list[str]:
+    """Produce the two normalized views of `text` that the injection matcher
+    scans, preserving both defense-in-depth passes from the original
+    substring scanner:
 
-    ADV-HIGH-4 / ADV-MED-4: central helper used by all summary paths so that
-    the full substring scan is consistently applied everywhere.
-    ADV-MED-1: NFKD-normalizes and strips Unicode Cf (format) chars before
-    checking, so zero-width characters cannot bypass the blocklist.
+    1. Cf (format char) strip -> NFKD -> confusable-homoglyph translation
+       -> lowercase. Catches zero-width bypass attempts (ADV-MED-1) and
+       cross-script lookalikes (TM-2).
+    2. The same Cf-strip + NFKD text, ASCII-folded (non-ASCII bytes
+       dropped) and lowercased (ADV-MED-3) — catches homoglyphs that NFKD
+       decomposes to ASCII equivalents without going through the
+       confusable map.
     """
-    # Strip format chars and normalize confusables before checking
-    stripped = "".join(
-        c for c in text if unicodedata.category(c) != "Cf"
-    )
+    stripped = "".join(c for c in text if unicodedata.category(c) != "Cf")
     nfkd = unicodedata.normalize("NFKD", stripped)
-    # TM-2: Apply confusable mapping to convert cross-script homoglyphs
-    # (Cyrillic/Greek lookalikes) to Latin equivalents before checking.
-    # NFKD alone doesn't handle these since they are distinct codepoints.
-    confusable_normalized = nfkd.translate(_CONFUSABLE_MAP)
-    nfkd_lower = confusable_normalized.lower()
-    if any(phrase in nfkd_lower for phrase in _INJECTION_PHRASES):
-        return True
-    # ADV-MED-3: Also check after ASCII stripping (original behavior)
-    # to catch homoglyphs that NFKD decomposes to ASCII equivalents.
-    text_lower = nfkd.encode("ascii", errors="ignore").decode("ascii").lower()
-    return any(phrase in text_lower for phrase in _INJECTION_PHRASES)
+    confusable_normalized = nfkd.translate(_CONFUSABLE_MAP).lower()
+    ascii_folded = nfkd.encode("ascii", errors="ignore").decode("ascii").lower()
+    return [confusable_normalized, ascii_folded]
+
+
+def _match_injection_rule(text: str) -> str | None:
+    """Return the stable rule id (e.g. "INJS_3") of the first injection
+    phrase that fires, or None. Never returns user text.
+
+    Strong phrases fire unconditionally. Weak phrases fire only when
+    corroborated within the same normalized variant: either a strong
+    phrase is also present, or a second distinct weak phrase is present.
+    Both normalized variants (see _normalize_variants) are checked.
+    """
+    for variant in _normalize_variants(text):
+        strong_match = _STRONG_INJECTION_PATTERN.search(variant)
+        if strong_match:
+            return strong_match.lastgroup
+
+        weak_matches = list(_WEAK_INJECTION_PATTERN.finditer(variant))
+        distinct_weak_groups = {m.lastgroup for m in weak_matches}
+        if len(distinct_weak_groups) >= 2:
+            return weak_matches[0].lastgroup
+
+    return None
+
+
+def _contains_injection_phrase(text: str) -> bool:
+    """Return True if text contains any injection phrase.
+
+    ADV-HIGH-4 / ADV-MED-4: central helper used by all summary paths so
+    that the full scan is consistently applied everywhere.
+    """
+    return _match_injection_rule(text) is not None
 
 
 def extract_summary_from_docstring(docstring: str) -> str:

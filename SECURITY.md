@@ -100,7 +100,13 @@ Every string field from untrusted sources — including `id`, `name`, `file`, `s
 
 ## Injection Phrase Detection
 
-Symbol summaries are scanned for injection phrases before storage. Any summary containing phrases like `"ignore"`, `"system:"`, `"IMPORTANT:"`, `"override"`, `"execute"`, and similar is stripped to an empty string. The check uses substring matching (not prefix-only) against the full summary text.
+Symbol summaries are scanned for injection phrases before storage (on generation, and re-scanned on index load and incremental save). Matching is word-boundary bounded — each phrase is anchored with `(?<!\w)...(?!\w)` so inflected/compound text (`overrides`, `act assign`, `react as`, `ecosystem:`) does not false-positive, while markup/role tokens (`<|`, `[inst]`, `<<sys>>`) match literally since they cannot take a word boundary.
+
+Phrases are split into two tiers:
+- **Strong** (`ignore`, `system:`, `disregard`, `act as`, `[inst]`, `<|`, and similar) fire unconditionally — a single occurrence strips the summary to an empty string.
+- **Weak/ambiguous** (`important:`, `override`, `you are`, bare `assistant`) fire only when corroborated — either a strong phrase or a second distinct weak phrase co-occurs in the same normalized text. This avoids false positives on ordinary prose ("Override the default timeout", "you are responsible for closing the handle") while still catching combined attacks ("IMPORTANT: override safety") and role-hijack preambles ("you are a helpful assistant").
+
+Any summary that matches is stripped to an empty string and the triggering rule id (never the matched user text) is aggregated into a per-operation counter; if any summaries were discarded, one `logger.info` record is emitted per operation with the total count and a rule-id breakdown.
 
 ## Secret Detection
 
