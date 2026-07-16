@@ -199,7 +199,9 @@ _spec = register(ToolSpec(
             },
             "limit": {
                 "type": "integer",
-                "description": "Maximum results to return (default 100, max 500)",
+                "description": "Maximum results to return (1-100, default 100)",
+                "minimum": 1,
+                "maximum": 100,
                 "default": 100,
             },
         },
