@@ -68,6 +68,8 @@ Each language parser extracts functions, classes, methods, parameters, call rela
 
 ## Quick Start
 
+Platform support: POSIX only (Linux/macOS); Windows is not supported.
+
 ### Step 1: Install
 
 ```bash
@@ -86,7 +88,7 @@ Use `claude mcp add` to register the dispatch wrapper. This registers a single t
 claude mcp add codesight \
   -e CODESIGHT_ALLOWED_ROOTS=/Users/you/src \
   -e GITHUB_TOKEN=ghp_... \
-  -- bun run ~/.claude/servers/codesight/mcp-server.ts
+  -- bun run ~/src/codesight-plugin/mcp-server.ts
 ```
 
 | Variable | Required | Description |

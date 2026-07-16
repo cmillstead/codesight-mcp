@@ -21,6 +21,7 @@ from mcp.server import Server
 from mcp.types import Tool, TextContent
 
 from .core.errors import sanitize_error
+from .core.platform_check import ensure_posix
 from .core.limits import (
     MAX_ARGUMENT_LENGTH, MAX_BATCH_SYMBOLS, MAX_FILE_PATTERN_LENGTH,
     MAX_CONTEXT_LINES, MAX_SEARCH_RESULTS,
@@ -446,6 +447,8 @@ def _run_cli_tool(tool_name: str, argv: list[str]) -> None:
     """Dispatch a tool by name with CLI arguments. Prints JSON result."""
     import sys
 
+    ensure_posix()
+
     specs = get_all_specs()
     if tool_name not in specs:
         print(json.dumps({"error": f"Unknown tool: {tool_name}"}))
@@ -633,6 +636,7 @@ def main():
     """
     import sys
 
+    ensure_posix()
     _configure_logging()
 
     from .tools.index_folder import index_folder as _index_folder
