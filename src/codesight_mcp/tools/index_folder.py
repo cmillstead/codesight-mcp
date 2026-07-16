@@ -322,7 +322,7 @@ def index_folder(
                     # _indexing_common.finalize_index.
                     result: dict = {
                         "success": True,
-                        "repo": f"{owner}/{repo_name}",
+                        "repo": wrap_untrusted_content(f"{owner}/{repo_name}"),
                         "indexed_at": updated.indexed_at,
                         "file_count": len(updated.source_files),
                         "symbol_count": len(updated.symbols),

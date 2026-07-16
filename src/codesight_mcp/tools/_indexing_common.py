@@ -154,7 +154,7 @@ def finalize_index(
     # list_repos wraps disk-derived repo names.
     result: dict = {
         "success": True,
-        "repo": f"{owner}/{name}",
+        "repo": wrap_untrusted_content(f"{owner}/{name}"),
         "indexed_at": indexed_at,
         "file_count": len(parsed_files),
         "symbol_count": len(all_symbols),
