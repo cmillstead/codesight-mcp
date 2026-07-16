@@ -42,14 +42,30 @@ def get_status(storage_path: Optional[str] = None) -> dict:
     # Staleness surface — aggregate counts only, no repo-name strings
     # (get_status is a trusted envelope).
     aged = sum(1 for r in repos if r.get("age_threshold_exceeded") is True)
+    # UNKNOWN age (unparseable or meaningfully-future indexed_at) must never be
+    # silently treated as fresh -- fail closed by surfacing it as its own bucket.
+    unknown = sum(
+        1 for r in repos
+        if "age_threshold_exceeded" in r and r["age_threshold_exceeded"] is None
+    )
     known = [r["index_age_days"] for r in repos if r.get("index_age_days") is not None]
     result["aged_repo_count"] = aged
+    result["unknown_age_repo_count"] = unknown
     if known:
         result["oldest_index_age_days"] = max(known)
-    if aged:
+    if aged or unknown:
+        parts = []
+        if aged:
+            parts.append(
+                f"{aged} indexed repo(s) exceed the {INDEX_AGE_THRESHOLD_DAYS}-day freshness threshold"
+            )
+        if unknown:
+            parts.append(
+                f"{unknown} indexed repo(s) have an unparseable-or-future indexed_at timestamp "
+                "and are treated as NOT fresh"
+            )
         result["staleness_warning"] = (
-            f"{aged} indexed repo(s) exceed the {INDEX_AGE_THRESHOLD_DAYS}-day freshness "
-            "threshold; re-index with `codesight-mcp index-folder --path <dir>` or "
+            "; ".join(parts) + "; re-index with `codesight-mcp index-folder --path <dir>` or "
             "`codesight-mcp index-repo <url>`."
         )
 

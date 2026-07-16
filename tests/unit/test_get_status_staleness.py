@@ -63,4 +63,61 @@ def test_get_status_fresh_repo_has_no_staleness_warning(python_index, tmp_path):
     result = get_status(storage_path=str(tmp_path))
 
     assert result["aged_repo_count"] == 0
+    assert result["unknown_age_repo_count"] == 0
     assert "staleness_warning" not in result
+
+
+def _set_indexed_at(tmp_path, owner: str, name: str, stamp: str) -> None:
+    """Overwrite indexed_at in both the metadata sidecar and the full index.
+
+    Mirrors _backdate_repo's dual-write so the test is independent of which
+    list_repos() branch (sidecar vs. full-index fallback) is exercised.
+    """
+    meta_path = tmp_path / f"{owner}__{name}.meta.json"
+    meta = json.loads(meta_path.read_text())
+    meta["indexed_at"] = stamp
+    meta_path.write_text(json.dumps(meta))
+
+    index_path = tmp_path / f"{owner}__{name}.json.gz"
+    with gzip.open(index_path, "rt", encoding="utf-8") as f:
+        data = json.load(f)
+    data["indexed_at"] = stamp
+    with gzip.open(index_path, "wt", encoding="utf-8") as f:
+        json.dump(data, f)
+
+
+def test_get_status_malformed_indexed_at_counted_as_unknown_age(python_index, tmp_path):
+    _common._clear_shared_stores()
+    _set_indexed_at(tmp_path, python_index["owner"], python_index["name"], "not-a-timestamp")
+
+    result = get_status(storage_path=str(tmp_path))
+
+    assert result["unknown_age_repo_count"] == 1
+    assert result["aged_repo_count"] == 0
+    assert "staleness_warning" in result
+    assert "unparseable-or-future" in result["staleness_warning"]
+
+
+def test_get_status_future_indexed_at_counted_as_unknown_age(python_index, tmp_path):
+    _common._clear_shared_stores()
+    future_stamp = (datetime.now(timezone.utc) + timedelta(days=10)).isoformat()
+    _set_indexed_at(tmp_path, python_index["owner"], python_index["name"], future_stamp)
+
+    result = get_status(storage_path=str(tmp_path))
+
+    assert result["unknown_age_repo_count"] == 1
+    assert result["aged_repo_count"] == 0
+    assert "staleness_warning" in result
+    assert "unparseable-or-future" in result["staleness_warning"]
+
+
+def test_get_status_unknown_age_response_contains_no_repo_name_strings(python_index, tmp_path):
+    _common._clear_shared_stores()
+    _set_indexed_at(tmp_path, python_index["owner"], python_index["name"], "not-a-timestamp")
+
+    result = get_status(storage_path=str(tmp_path))
+
+    assert "repo" not in result
+    serialized = json.dumps(result)
+    assert python_index["owner"] not in serialized
+    assert f"{python_index['owner']}/{python_index['name']}" not in serialized
