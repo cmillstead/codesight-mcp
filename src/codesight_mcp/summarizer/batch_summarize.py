@@ -70,6 +70,12 @@ _STRONG_INJECTION_PHRASES = (
     "disregard",
     "forget",
     "new instruction",
+    # Explicit plural forms: the trailing (?!\w) word-boundary guard added
+    # for the base singular phrase blocks it from matching inside the
+    # plural ("new instruction" cannot match "new instructions" because the
+    # trailing "s" is a word char) — restores parity with the pre-boundary
+    # substring matcher (Codex P1).
+    "new instructions",
     "you must",
     "respond with",
     "reply with",
@@ -77,6 +83,7 @@ _STRONG_INJECTION_PHRASES = (
     "run this",
     "note to ai",
     "critical instruction",
+    "critical instructions",
     "from now on",
     "act as",
     "<|",
