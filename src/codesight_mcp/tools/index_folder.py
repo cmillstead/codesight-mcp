@@ -21,6 +21,7 @@ _GIT_HASH_RE = re.compile(r"^[0-9a-f]{40}$")
 from ..discovery import discover_local_files  # noqa: E402
 from ..parser import LANGUAGE_EXTENSIONS  # noqa: E402
 from ..security import sanitize_repo_identifier  # noqa: E402
+from ..core.boundaries import make_meta, wrap_untrusted_content  # noqa: E402
 from ..core.errors import sanitize_error  # noqa: E402
 from ..core.validation import is_within, ValidationError  # noqa: E402
 
@@ -315,6 +316,10 @@ def index_folder(
                         except Exception as exc:  # RC-011: best-effort — never break indexing
                             logger.warning("Failed to invalidate embeddings: %s", exc)
 
+                    # ADV-HIGH-3 (audit #2): filenames come from the indexed
+                    # folder and are caller-controlled -- frame them as
+                    # untrusted, same as the full-index path in
+                    # _indexing_common.finalize_index.
                     result: dict = {
                         "success": True,
                         "repo": f"{owner}/{repo_name}",
@@ -322,11 +327,12 @@ def index_folder(
                         "file_count": len(updated.source_files),
                         "symbol_count": len(updated.symbols),
                         "languages": updated.languages,
-                        "files": sorted(updated.source_files)[:20],
+                        "files": [wrap_untrusted_content(f) for f in sorted(updated.source_files)[:20]],
                         "incremental": True,
                         "changed_files": len(changed_files),
                         "new_files": len(new_files),
                         "deleted_files": len(deleted_files),
+                        "_meta": make_meta(source="index", trusted=False),
                     }
                     if warnings:
                         result["warnings"] = warnings
@@ -436,5 +442,6 @@ _spec = register(ToolSpec(
     handler=_handle_index_folder,
     index_gate=True,
     required_args=["path"],
+    untrusted=True,
     annotations=ToolAnnotations(title="Index Folder", readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True),
 ))
