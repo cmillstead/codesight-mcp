@@ -7,6 +7,7 @@ import gzip
 import json
 from datetime import datetime, timedelta, timezone
 
+from codesight_mcp.storage import IndexStore
 from codesight_mcp.tools import _common
 from codesight_mcp.tools.get_status import get_status
 
@@ -114,6 +115,68 @@ def test_get_status_future_indexed_at_counted_as_unknown_age(python_index, tmp_p
 def test_get_status_unknown_age_response_contains_no_repo_name_strings(python_index, tmp_path):
     _common._clear_shared_stores()
     _set_indexed_at(tmp_path, python_index["owner"], python_index["name"], "not-a-timestamp")
+
+    result = get_status(storage_path=str(tmp_path))
+
+    assert "repo" not in result
+    serialized = json.dumps(result)
+    assert python_index["owner"] not in serialized
+    assert f"{python_index['owner']}/{python_index['name']}" not in serialized
+
+
+def _null_indexed_at(tmp_path, owner: str, name: str) -> None:
+    """Overwrite indexed_at with JSON null in both the sidecar and full index.
+
+    Mirrors _set_indexed_at's dual-write pattern so the test is independent
+    of which list_repos() branch (sidecar vs. full-index fallback) is
+    exercised.
+    """
+    meta_path = tmp_path / f"{owner}__{name}.meta.json"
+    meta = json.loads(meta_path.read_text())
+    meta["indexed_at"] = None
+    meta_path.write_text(json.dumps(meta))
+
+    index_path = tmp_path / f"{owner}__{name}.json.gz"
+    with gzip.open(index_path, "rt", encoding="utf-8") as f:
+        data = json.load(f)
+    data["indexed_at"] = None
+    with gzip.open(index_path, "wt", encoding="utf-8") as f:
+        json.dump(data, f)
+
+
+def test_list_repos_includes_null_indexed_at_repo_as_unknown_age(python_index, tmp_path):
+    """A structurally-valid repo record with indexed_at=null must be
+    INCLUDED by list_repos with unknown-age fields, not dropped -- dropping
+    it would defeat fail-closed staleness (the repo would appear invisible
+    rather than flagged as unknown)."""
+    _null_indexed_at(tmp_path, python_index["owner"], python_index["name"])
+
+    store = IndexStore(base_path=str(tmp_path))
+    repos = store.list_repos()
+
+    assert len(repos) == 1
+    assert repos[0]["indexed_at"] is None
+    assert repos[0]["index_age_days"] is None
+    assert repos[0]["age_threshold_exceeded"] is None
+
+
+def test_get_status_null_indexed_at_counted_as_unknown_age_not_invisible(python_index, tmp_path):
+    """A repo with indexed_at=null must be counted (repo_count,
+    unknown_age_repo_count) and trigger a staleness_warning -- it must NOT
+    appear healthy/invisible the way a dropped record would."""
+    _common._clear_shared_stores()
+    _null_indexed_at(tmp_path, python_index["owner"], python_index["name"])
+
+    result = get_status(storage_path=str(tmp_path))
+
+    assert result["repo_count"] >= 1
+    assert result["unknown_age_repo_count"] >= 1
+    assert "staleness_warning" in result
+
+
+def test_get_status_null_indexed_at_response_contains_no_repo_name_strings(python_index, tmp_path):
+    _common._clear_shared_stores()
+    _null_indexed_at(tmp_path, python_index["owner"], python_index["name"])
 
     result = get_status(storage_path=str(tmp_path))
 

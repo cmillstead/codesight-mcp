@@ -1026,7 +1026,14 @@ class IndexStore:
     _MAX_REPOS: int = 500
 
     def _read_metadata_sidecar(self, meta_path: Path) -> Optional[dict]:
-        """Read and validate a metadata sidecar file. Returns None on any error."""
+        """Read and validate a metadata sidecar file. Returns None on any error.
+
+        `indexed_at` is intentionally NOT part of the structural-validity
+        check: a missing/non-string value means the age is unknown, not that
+        the record is malformed. Fail-closed staleness (get_status) depends
+        on such repos still surfacing, so this normalizes indexed_at to None
+        rather than dropping the record. See list_repos().
+        """
         try:
             fd = os.open(str(meta_path), os.O_RDONLY | os.O_NOFOLLOW)
             with os.fdopen(fd, "r", encoding="utf-8") as f:
@@ -1034,15 +1041,17 @@ class IndexStore:
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             logger.debug("Failed to read metadata sidecar %s: %s", meta_path, exc)
             return None
-        required = ("repo", "indexed_at", "symbol_count", "file_count", "languages", "index_version")
+        required = ("repo", "symbol_count", "file_count", "languages", "index_version")
         if not all(k in data for k in required):
             return None
-        if not isinstance(data.get("repo"), str) or not isinstance(data.get("indexed_at"), str):
+        if not isinstance(data.get("repo"), str):
             return None
         if not isinstance(data.get("symbol_count"), int) or not isinstance(data.get("file_count"), int):
             return None
         if not isinstance(data.get("languages"), dict):
             return None
+        if not isinstance(data.get("indexed_at"), str):
+            data["indexed_at"] = None
         return data
 
     def list_repos(self) -> list[dict]:
@@ -1121,9 +1130,12 @@ class IndexStore:
                     else:
                         data = json.loads(raw_bytes.decode("utf-8"))
 
-                    if not all(k in data for k in ("repo", "indexed_at", "symbols", "source_files", "languages")):
+                    # indexed_at is NOT required here: a missing/non-string
+                    # value means unknown age, not a malformed record (see
+                    # _read_metadata_sidecar for the equivalent Phase 1 rule).
+                    if not all(k in data for k in ("repo", "symbols", "source_files", "languages")):
                         continue
-                    if not isinstance(data.get("repo"), str) or not isinstance(data.get("indexed_at"), str):
+                    if not isinstance(data.get("repo"), str):
                         continue
 
                     repo_key = data["repo"]
@@ -1131,15 +1143,19 @@ class IndexStore:
                         continue
                     seen_repos.add(repo_key)
 
+                    indexed_at = data.get("indexed_at")
+                    if not isinstance(indexed_at, str):
+                        indexed_at = None
+
                     repos.append({
                         "repo": data["repo"],
-                        "indexed_at": data["indexed_at"],
+                        "indexed_at": indexed_at,
                         "symbol_count": len(data["symbols"]),
                         "file_count": len(data["source_files"]),
                         "languages": data["languages"],
                         "index_version": data.get("index_version", 1),
-                        "index_age_days": index_age_days(data["indexed_at"]),
-                        "age_threshold_exceeded": age_threshold_exceeded(data["indexed_at"]),
+                        "index_age_days": index_age_days(indexed_at),
+                        "age_threshold_exceeded": age_threshold_exceeded(indexed_at),
                         "git_head": valid_git_head(data.get("git_head")),
                     })
                 except (OSError, gzip.BadGzipFile, json.JSONDecodeError, KeyError,
