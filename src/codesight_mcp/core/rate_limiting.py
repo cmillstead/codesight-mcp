@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import cast
 
 from .locking import atomic_write_nofollow, ensure_private_dir, exclusive_file_lock
 from .limits import MAX_INDEX_SIZE
@@ -27,7 +28,7 @@ _consecutive_write_failures: int = 0
 _last_failure_time: float = 0.0
 
 
-def _rate_limit_state_dir(storage_path: str | None) -> Path:
+def _rate_limit_state_dir(storage_path: str | None) -> Path | None:
     """Directory where persistent rate-limit state lives."""
     if storage_path is not None:
         return ensure_private_dir(storage_path)
@@ -107,7 +108,7 @@ def _rate_limit(tool_name: str, storage_path: str | None) -> bool:
             fd = os.open(str(state_path), os.O_RDONLY | os.O_NOFOLLOW)
         except OSError as exc:
             if exc.errno == errno.ELOOP:
-                data = {}  # symlink — reject silently
+                data: dict[str, object] = {}  # symlink — reject silently
             elif exc.errno == errno.ENOENT:
                 data = {}  # file doesn't exist yet
             else:
@@ -127,7 +128,7 @@ def _rate_limit(tool_name: str, storage_path: str | None) -> bool:
 
         global_timestamps = [
             float(t)
-            for t in data.get("global", [])
+            for t in cast(list, data.get("global", []))
             if isinstance(t, (int, float)) and now - float(t) < _RATE_WINDOW_SECONDS and float(t) <= now + 5
         ]
         # Cap global timestamps to prevent memory/CPU spike from huge arrays

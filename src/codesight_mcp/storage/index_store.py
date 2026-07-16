@@ -50,7 +50,7 @@ def _check_posix_acls(path: str) -> None:
         # On Linux, the system.posix_acl_access xattr contains ACL entries.
         # If getxattr succeeds and the ACL has more than the 3 base entries
         # (owner, group, other), non-owner ACL entries are present.
-        acl_data = os.getxattr(path, b"system.posix_acl_access")
+        acl_data = getattr(os, "getxattr")(path, b"system.posix_acl_access")
         # POSIX ACL binary format: 4-byte version + 8 bytes per entry.
         # 3 base entries = 4 + 3*8 = 28 bytes. More than 28 = extra ACLs.
         if len(acl_data) > 28:
@@ -780,6 +780,8 @@ class IndexStore:
 
         self._sanitize_loaded_symbols(data["symbols"])
 
+        fh = data.get("file_hashes")
+        file_hashes = fh if isinstance(fh, dict) else {}
         try:
             index = CodeIndex(
                 repo=data["repo"],
@@ -790,7 +792,7 @@ class IndexStore:
                 languages=data["languages"],
                 symbols=data["symbols"],
                 index_version=stored_version,
-                file_hashes=data.get("file_hashes") if isinstance(data.get("file_hashes"), dict) else {},
+                file_hashes=file_hashes,
                 git_head=data.get("git_head", ""),
             )
         except (KeyError, TypeError, ValueError):
@@ -1050,7 +1052,7 @@ class IndexStore:
         to full index decompression for repos that lack a sidecar (backwards
         compatibility with indexes created before this feature).
         """
-        repos = []
+        repos: list[dict] = []
         seen_repos: set[str] = set()
 
         # Phase 1: read metadata sidecars (fast path)

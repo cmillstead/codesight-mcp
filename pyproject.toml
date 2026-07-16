@@ -44,6 +44,9 @@ semantic = [
     "fastembed>=0.4.0,<1.0.0",
 ]
 
+[dependency-groups]
+typecheck = ["mypy>=1.11,<2.0"]
+
 [build-system]
 requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
@@ -58,6 +61,16 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "F", "W"]
 ignore = ["E501"]  # line length handled by line-length setting
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+files = [
+    "src/codesight_mcp/core/locking.py",
+    "src/codesight_mcp/core/rate_limiting.py",
+    "src/codesight_mcp/storage/index_store.py",
+]
+warn_unused_ignores = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

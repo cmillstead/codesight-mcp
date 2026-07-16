@@ -49,7 +49,7 @@ def ensure_private_dir(path: str | Path) -> Path:
     # TM-4: Check for POSIX ACLs on Linux
     if _platform.system() == "Linux":
         try:
-            acl_data = os.getxattr(str(target), b"system.posix_acl_access")
+            acl_data = getattr(os, "getxattr")(str(target), b"system.posix_acl_access")
             if len(acl_data) > 28:
                 _logging.getLogger(__name__).warning(
                     "TM-4: Directory %s has POSIX ACL entries beyond base permissions. "
@@ -64,7 +64,7 @@ def ensure_private_dir(path: str | Path) -> Path:
 def atomic_write_nofollow(path: str | Path, data: str) -> None:
     """Atomically write text data without following symlinks at the temp path."""
     target = Path(path)
-    tmp_path = target.with_name(
+    tmp_path: Path | None = target.with_name(
         f"{target.name}.tmp.{os.getpid()}.{threading.get_ident()}"
     )
     fd = os.open(
@@ -76,8 +76,10 @@ def atomic_write_nofollow(path: str | Path, data: str) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(data)
         try:
+            assert tmp_path is not None
             tmp_path.replace(target)
         except OSError:
+            assert tmp_path is not None
             tmp_path.unlink(missing_ok=True)
             tmp_path = None
             raise
