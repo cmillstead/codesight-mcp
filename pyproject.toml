@@ -61,7 +61,7 @@ ignore = ["E501"]  # line length handled by line-length setting
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 asyncio_mode = "auto"
 markers = [
     "benchmark: token efficiency and performance benchmarks",
