@@ -11,6 +11,7 @@
 | Python | 3.10+ | CI uses 3.12 |
 | uv | Latest | Package manager (preferred over pip) |
 | Git | Any | For cloning and hooks |
+| Platform | POSIX | Linux/macOS only — Windows unsupported (relies on `fcntl.flock`, `os.getuid`, `O_NOFOLLOW`); startup fails fast on non-POSIX |
 
 **Optional:**
 - `ANTHROPIC_API_KEY` — Enables AI-generated symbol summaries (falls back to docstrings)

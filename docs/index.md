@@ -30,10 +30,11 @@
 ## Existing Documentation
 
 - [README.md](../README.md) — User guide: features, 34-tool reference, quick start, security model, env vars, git hooks
-- [docs/decisions/](./decisions/) — 5 security Architecture Decision Records
+- [CHANGELOG.md](../CHANGELOG.md) — Release history (Keep a Changelog format); current release v0.6.0
+- [docs/decisions/](./decisions/) — 7 Architecture Decision Records (5 security + 2 design: contract-sync, injection-defense posture)
 - [SECURITY.md](../SECURITY.md) — Threat model, 53-row defense matrix, validation chain, resource limits
 - [CLAUDE.md](../CLAUDE.md) — AI navigation guide (use codesight-mcp tools instead of reading files)
-- [.github/workflows/ci.yml](../.github/workflows/ci.yml) — CI: Python 3.12, uv, pytest, SHA-pinned actions
+- [.github/workflows/ci.yml](../.github/workflows/ci.yml) — CI: Python 3.12, uv, pytest, mypy typecheck, SHA-pinned actions
 
 ## Historical Plans
 
