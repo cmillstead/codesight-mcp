@@ -138,20 +138,26 @@ _STRONG_INJECTION_PATTERN = _build_tier_pattern(_STRONG_INJECTION_PHRASES, "INJS
 _WEAK_INJECTION_PATTERN = _build_tier_pattern(_WEAK_INJECTION_PHRASES, "INJW")
 
 # Strong multi-word injection SIGNATURES: an imperative injection verb,
-# optionally followed by a quantifier/article, one or more REQUIRED
-# position/modifier words, and a REQUIRED injection object — e.g.
-# "override all prior instructions" or the stacked form "override all
+# optionally followed by a quantifier/article/possessive determiner, one or
+# more REQUIRED position/modifier words, and a REQUIRED injection object —
+# e.g. "override all prior instructions", the stacked form "override all
 # previous system instructions" (position words repeat to swallow
-# modifiers like "system"/"developer" that precede the object). Unlike
-# the single-token strong/weak tiers above, this requires BOTH a position
-# word and the object to co-occur, which keeps it tight enough to avoid
-# benign docstring collisions like "override the default timeout" (no
-# position word) or "override the following method" (position word
-# present, but "method" is not an injection object — the object set is
-# deliberately narrow). Fires unconditionally, like the single-phrase
+# modifiers like "system"/"developer" that precede the object), or the
+# possessive form "override your previous instructions". The
+# position/object pair may appear in either order — "previous instructions"
+# or "instructions above" (Codex P1: object-before-position wording was
+# previously missed). Unlike the single-token strong/weak tiers above,
+# this requires BOTH a position word and the object to co-occur, which
+# keeps it tight enough to avoid benign docstring collisions like
+# "override the default timeout" (no position word) or "override the
+# default instructions" (object present, but no position word — the
+# position requirement is what distinguishes an injection template from
+# ordinary config talk). Fires unconditionally, like the single-phrase
 # strong tier — checked before the weak-corroboration tier.
 _INJECTION_SIGNATURE_VERBS = r"(?:ignore|disregard|override|forget|discard)"
-_INJECTION_SIGNATURE_QUANTIFIERS = r"(?:(?:all|any|these|those|the)\s+)*"
+_INJECTION_SIGNATURE_QUANTIFIERS = (
+    r"(?:(?:all|any|these|those|the|your|their|my|our|its)\s+)*"
+)
 _INJECTION_SIGNATURE_POSITIONS = (
     r"(?:prior|previous|above|preceding|earlier|foregoing|following|"
     r"initial|original|system|developer|safety)"
@@ -159,10 +165,14 @@ _INJECTION_SIGNATURE_POSITIONS = (
 _INJECTION_SIGNATURE_OBJECTS = (
     r"(?:instruction|directive|prompt|rule|command|guardrail)s?"
 )
+_INJECTION_SIGNATURE_CORE = (
+    rf"(?:(?:\b{_INJECTION_SIGNATURE_POSITIONS}\b\s+)+\b{_INJECTION_SIGNATURE_OBJECTS}\b"
+    rf"|\b{_INJECTION_SIGNATURE_OBJECTS}\b\s+(?:\b{_INJECTION_SIGNATURE_POSITIONS}\b\s*)+)"
+)
 _INJECTION_SIGNATURE_PATTERN = re.compile(
     r"(?P<INJSIG_0>"
     rf"\b{_INJECTION_SIGNATURE_VERBS}\b\s+{_INJECTION_SIGNATURE_QUANTIFIERS}"
-    rf"(?:\b{_INJECTION_SIGNATURE_POSITIONS}\b\s+)+\b{_INJECTION_SIGNATURE_OBJECTS}\b"
+    rf"{_INJECTION_SIGNATURE_CORE}"
     r")"
 )
 
