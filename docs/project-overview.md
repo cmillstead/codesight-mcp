@@ -1,5 +1,7 @@
 # codesight-mcp — Project Overview
 
+<!-- codesight:counts ops=34 langs=66 tests=2562 -->
+
 **Generated:** 2026-03-10 | **Scan Level:** Exhaustive | **Phase:** 1 of 4
 
 ## Summary
@@ -67,7 +69,9 @@ server.py (286 lines)
   │   ├── errors.py       — Error sanitization
   │   ├── limits.py       — Resource limit constants
   │   ├── rate_limiting.py — Persistent file-backed rate limiter
-  │   └── locking.py      — Advisory file locks for index serialization
+  │   ├── locking.py      — Advisory file locks for index serialization
+  │   ├── freshness.py    — Index-age parsing + staleness policy (get_status/list_repos)
+  │   └── platform_check.py — Fail-fast POSIX-only startup guard
   │
   ├── storage/         (index persistence)
   │   └── index_store.py  — JSON/gzip index read/write/delete, atomic writes
@@ -95,7 +99,7 @@ server.py (286 lines)
 |--------|-------|
 | Source files | ~47 Python files |
 | Test files | ~40 Python files |
-| Test count | 2,495 |
+| Test count | 2,562 |
 | Tools | 34 MCP tools |
 | Languages supported | 66 |
 | Security scan rounds | 12 |

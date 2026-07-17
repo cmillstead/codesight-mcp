@@ -1,5 +1,7 @@
 # codesight-mcp — Documentation Index
 
+<!-- codesight:counts ops=34 langs=66 tests=2562 -->
+
 > Generated: 2026-03-09 | Scan Level: Exhaustive
 
 ## Project Overview
@@ -15,7 +17,7 @@
 - **Entry Point:** `codesight_mcp.server:main`
 - **Architecture Pattern:** Layered library — thin server dispatcher + 34 tool modules
 - **Tools:** 34 MCP tools (indexing, navigation, search, code graph, analysis, security, dependencies)
-- **Tests:** 2,495 tests (31% security/adversarial)
+- **Tests:** 2,562 tests (31% security/adversarial)
 - **Build:** hatchling + uv lockfile
 
 ## Generated Documentation
@@ -28,10 +30,11 @@
 ## Existing Documentation
 
 - [README.md](../README.md) — User guide: features, 34-tool reference, quick start, security model, env vars, git hooks
-- [docs/decisions/](./decisions/) — 5 security Architecture Decision Records
+- [CHANGELOG.md](../CHANGELOG.md) — Release history (Keep a Changelog format); current release v0.6.0
+- [docs/decisions/](./decisions/) — 7 Architecture Decision Records (5 security + 2 design: contract-sync, injection-defense posture)
 - [SECURITY.md](../SECURITY.md) — Threat model, 53-row defense matrix, validation chain, resource limits
 - [CLAUDE.md](../CLAUDE.md) — AI navigation guide (use codesight-mcp tools instead of reading files)
-- [.github/workflows/ci.yml](../.github/workflows/ci.yml) — CI: Python 3.12, uv, pytest, SHA-pinned actions
+- [.github/workflows/ci.yml](../.github/workflows/ci.yml) — CI: Python 3.12, uv, pytest, mypy typecheck, SHA-pinned actions
 
 ## Historical Plans
 

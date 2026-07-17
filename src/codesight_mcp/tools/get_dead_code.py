@@ -9,7 +9,7 @@ from mcp.types import ToolAnnotations
 from .registry import ToolSpec, register
 
 
-_MAX_DEAD_CODE = 500
+_MAX_DEAD_CODE = 100
 
 
 # Names that are typically entry points and should not be flagged.
@@ -108,7 +108,7 @@ def get_dead_code(
         repo: Repository identifier (owner/repo or just repo name).
         language: Optional language filter (e.g. "python", "javascript").
         include_tests: If True, include symbols from test files (default False).
-        limit: Maximum results to return (default 100, max 500).
+        limit: Maximum results to return (1-100, default 100).
         storage_path: Custom storage path.
 
     Returns:
@@ -199,7 +199,9 @@ _spec = register(ToolSpec(
             },
             "limit": {
                 "type": "integer",
-                "description": "Maximum results to return (default 100, max 500)",
+                "description": "Maximum results to return (1-100, default 100)",
+                "minimum": 1,
+                "maximum": 100,
                 "default": 100,
             },
         },

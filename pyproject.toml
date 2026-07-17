@@ -3,11 +3,16 @@
 # (Risk: a malicious actor could publish 'codesight-mcp' to PyPI.)
 [project]
 name = "codesight-mcp"
-version = "0.1.0"
+version = "0.6.0"
 description = "Security-hardened, token-efficient MCP server for code exploration via tree-sitter AST parsing"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
+classifiers = [
+    "Operating System :: POSIX",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+]
 dependencies = [
     "mcp>=1.26.0,<2.0.0",
     "httpx>=0.27.0,<1.0.0",
@@ -44,6 +49,9 @@ semantic = [
     "fastembed>=0.4.0,<1.0.0",
 ]
 
+[dependency-groups]
+typecheck = ["mypy>=1.11,<2.0"]
+
 [build-system]
 requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
@@ -59,9 +67,19 @@ target-version = "py310"
 select = ["E", "F", "W"]
 ignore = ["E501"]  # line length handled by line-length setting
 
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+files = [
+    "src/codesight_mcp/core/locking.py",
+    "src/codesight_mcp/core/rate_limiting.py",
+    "src/codesight_mcp/storage/index_store.py",
+]
+warn_unused_ignores = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 asyncio_mode = "auto"
 markers = [
     "benchmark: token efficiency and performance benchmarks",

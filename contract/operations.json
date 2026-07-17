@@ -1,0 +1,1205 @@
+{
+  "operations": {
+    "analyze-complexity": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "analyze-complexity",
+      "params": {
+        "properties": {
+          "limit": {
+            "default": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "path_class": null,
+            "type": "integer"
+          },
+          "path": {
+            "path_class": "repo_relative_path",
+            "type": "string"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "sort_by": {
+            "default": "risk",
+            "enum": [
+              "risk",
+              "complexity",
+              "cognitive"
+            ],
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo"
+      ],
+      "untrusted": true
+    },
+    "check-licenses": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "check-licenses",
+      "params": {
+        "properties": {
+          "repo_path": {
+            "path_class": "host_path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo_path"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo_path"
+      ],
+      "untrusted": true
+    },
+    "compare-symbols": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "compare-symbols",
+      "params": {
+        "properties": {
+          "base_repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "head_repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "storage_path": {
+            "path_class": "host_path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_repo",
+          "head_repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "base_repo",
+        "head_repo"
+      ],
+      "untrusted": true
+    },
+    "generate-sbom": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "generate-sbom",
+      "params": {
+        "properties": {
+          "format": {
+            "default": "codesight",
+            "enum": [
+              "codesight",
+              "cyclonedx",
+              "spdx"
+            ],
+            "path_class": null,
+            "type": "string"
+          },
+          "repo_path": {
+            "path_class": "host_path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo_path"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo_path"
+      ],
+      "untrusted": true
+    },
+    "get-call-chain": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-call-chain",
+      "params": {
+        "properties": {
+          "from_symbol": {
+            "path_class": null,
+            "type": "string"
+          },
+          "max_depth": {
+            "default": 10,
+            "path_class": null,
+            "type": "integer"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "to_symbol": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_symbol",
+          "repo",
+          "to_symbol"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "from_symbol",
+        "repo",
+        "to_symbol"
+      ],
+      "untrusted": true
+    },
+    "get-callees": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-callees",
+      "params": {
+        "properties": {
+          "max_depth": {
+            "default": 1,
+            "path_class": null,
+            "type": "integer"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "symbol_id": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "symbol_id"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo",
+        "symbol_id"
+      ],
+      "untrusted": true
+    },
+    "get-callers": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-callers",
+      "params": {
+        "properties": {
+          "max_depth": {
+            "default": 1,
+            "path_class": null,
+            "type": "integer"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "symbol_id": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "symbol_id"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo",
+        "symbol_id"
+      ],
+      "untrusted": true
+    },
+    "get-changes": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-changes",
+      "params": {
+        "properties": {
+          "git_ref": {
+            "default": "HEAD~1..HEAD",
+            "path_class": null,
+            "type": "string"
+          },
+          "include_impact": {
+            "default": false,
+            "path_class": null,
+            "type": "boolean"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "repo_path": {
+            "path_class": "host_path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo"
+      ],
+      "untrusted": true
+    },
+    "get-dead-code": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-dead-code",
+      "params": {
+        "properties": {
+          "include_tests": {
+            "default": false,
+            "path_class": null,
+            "type": "boolean"
+          },
+          "language": {
+            "path_class": null,
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 100,
+            "minimum": 1,
+            "path_class": null,
+            "type": "integer"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo"
+      ],
+      "untrusted": true
+    },
+    "get-dependencies": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-dependencies",
+      "params": {
+        "properties": {
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo"
+      ],
+      "untrusted": true
+    },
+    "get-diagram": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-diagram",
+      "params": {
+        "properties": {
+          "direction": {
+            "default": "TD",
+            "enum": [
+              "TD",
+              "LR"
+            ],
+            "path_class": null,
+            "type": "string"
+          },
+          "max_depth": {
+            "default": 2,
+            "path_class": null,
+            "type": "integer"
+          },
+          "path": {
+            "path_class": "repo_relative_path",
+            "type": "string"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "symbol_id": {
+            "path_class": null,
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "call_graph",
+              "type_hierarchy",
+              "imports",
+              "impact"
+            ],
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "type"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo",
+        "type"
+      ],
+      "untrusted": true
+    },
+    "get-file-outline": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-file-outline",
+      "params": {
+        "properties": {
+          "file_path": {
+            "path_class": "repo_relative_path",
+            "type": "string"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_path",
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "file_path",
+        "repo"
+      ],
+      "untrusted": true
+    },
+    "get-file-tree": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-file-tree",
+      "params": {
+        "properties": {
+          "path_prefix": {
+            "default": "",
+            "path_class": "repo_relative_path",
+            "type": "string"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo"
+      ],
+      "untrusted": true
+    },
+    "get-impact": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-impact",
+      "params": {
+        "properties": {
+          "max_depth": {
+            "default": 3,
+            "path_class": null,
+            "type": "integer"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "symbol_id": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "symbol_id"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo",
+        "symbol_id"
+      ],
+      "untrusted": true
+    },
+    "get-imports": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-imports",
+      "params": {
+        "properties": {
+          "direction": {
+            "default": "imports",
+            "enum": [
+              "imports",
+              "importers"
+            ],
+            "path_class": null,
+            "type": "string"
+          },
+          "file": {
+            "path_class": "repo_relative_path",
+            "type": "string"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "file",
+        "repo"
+      ],
+      "untrusted": true
+    },
+    "get-key-symbols": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-key-symbols",
+      "params": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "function",
+              "method",
+              "class"
+            ],
+            "path_class": null,
+            "type": "string"
+          },
+          "limit": {
+            "default": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "path_class": null,
+            "type": "integer"
+          },
+          "path": {
+            "path_class": "repo_relative_path",
+            "type": "string"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo"
+      ],
+      "untrusted": true
+    },
+    "get-repo-outline": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-repo-outline",
+      "params": {
+        "properties": {
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo"
+      ],
+      "untrusted": true
+    },
+    "get-status": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-status",
+      "params": {
+        "properties": {},
+        "type": "object"
+      },
+      "required_args": [],
+      "untrusted": false
+    },
+    "get-symbol": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-symbol",
+      "params": {
+        "properties": {
+          "context_lines": {
+            "default": 0,
+            "path_class": null,
+            "type": "integer"
+          },
+          "file_path": {
+            "path_class": "repo_relative_path",
+            "type": "string"
+          },
+          "line": {
+            "path_class": null,
+            "type": "integer"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "symbol_id": {
+            "path_class": null,
+            "type": "string"
+          },
+          "verify": {
+            "default": false,
+            "path_class": null,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo"
+      ],
+      "untrusted": true
+    },
+    "get-symbol-context": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-symbol-context",
+      "params": {
+        "properties": {
+          "include_graph": {
+            "default": false,
+            "path_class": null,
+            "type": "boolean"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "symbol_id": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "symbol_id"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo",
+        "symbol_id"
+      ],
+      "untrusted": true
+    },
+    "get-symbols": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-symbols",
+      "params": {
+        "properties": {
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "symbol_ids": {
+            "items": {
+              "type": "string"
+            },
+            "path_class": null,
+            "type": "array"
+          }
+        },
+        "required": [
+          "repo",
+          "symbol_ids"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo",
+        "symbol_ids"
+      ],
+      "untrusted": true
+    },
+    "get-type-hierarchy": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-type-hierarchy",
+      "params": {
+        "properties": {
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "symbol_id": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "symbol_id"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo",
+        "symbol_id"
+      ],
+      "untrusted": true
+    },
+    "get-usage-stats": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "get-usage-stats",
+      "params": {
+        "properties": {
+          "session": {
+            "path_class": null,
+            "type": "string"
+          },
+          "tool_name": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "required_args": [],
+      "untrusted": false
+    },
+    "index-folder": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": true,
+      "operation": "index-folder",
+      "params": {
+        "properties": {
+          "extra_ignore_patterns": {
+            "items": {
+              "type": "string"
+            },
+            "path_class": null,
+            "type": "array"
+          },
+          "follow_symlinks": {
+            "default": false,
+            "path_class": null,
+            "type": "boolean"
+          },
+          "path": {
+            "path_class": "host_path",
+            "type": "string"
+          },
+          "use_ai_summaries": {
+            "default": true,
+            "path_class": null,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "path"
+      ],
+      "untrusted": true
+    },
+    "index-repo": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": true,
+      "operation": "index-repo",
+      "params": {
+        "properties": {
+          "url": {
+            "path_class": null,
+            "type": "string"
+          },
+          "use_ai_summaries": {
+            "default": true,
+            "path_class": null,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "url"
+      ],
+      "untrusted": true
+    },
+    "invalidate-cache": {
+      "ci_exit_key": null,
+      "destructive": true,
+      "index_gate": false,
+      "operation": "invalidate-cache",
+      "params": {
+        "properties": {
+          "confirm": {
+            "default": false,
+            "path_class": null,
+            "type": "boolean"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo"
+      ],
+      "untrusted": false
+    },
+    "lint-index": {
+      "ci_exit_key": "clean",
+      "destructive": false,
+      "index_gate": false,
+      "operation": "lint-index",
+      "params": {
+        "properties": {
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo"
+      ],
+      "untrusted": true
+    },
+    "list-repos": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "list-repos",
+      "params": {
+        "properties": {},
+        "type": "object"
+      },
+      "required_args": [],
+      "untrusted": true
+    },
+    "scan-security": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "scan-security",
+      "params": {
+        "properties": {
+          "category": {
+            "path_class": null,
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 100,
+            "minimum": 1,
+            "path_class": null,
+            "type": "integer"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "severity": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo"
+      ],
+      "untrusted": true
+    },
+    "search-references": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "search-references",
+      "params": {
+        "properties": {
+          "file_pattern": {
+            "path_class": "glob",
+            "type": "string"
+          },
+          "max_results": {
+            "default": 20,
+            "path_class": null,
+            "type": "integer"
+          },
+          "query": {
+            "path_class": null,
+            "type": "string"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "query",
+        "repo"
+      ],
+      "untrusted": true
+    },
+    "search-symbols": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "search-symbols",
+      "params": {
+        "properties": {
+          "file_pattern": {
+            "path_class": "glob",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "function",
+              "class",
+              "method",
+              "constant",
+              "type"
+            ],
+            "path_class": null,
+            "type": "string"
+          },
+          "language": {
+            "enum": [
+              "ada",
+              "bash",
+              "c",
+              "c_sharp",
+              "clojure",
+              "cmake",
+              "commonlisp",
+              "cpp",
+              "css",
+              "cuda",
+              "d",
+              "dart",
+              "dockerfile",
+              "elixir",
+              "elm",
+              "erlang",
+              "fortran",
+              "fsharp",
+              "gdscript",
+              "gleam",
+              "glsl",
+              "go",
+              "graphql",
+              "haskell",
+              "hcl",
+              "hlsl",
+              "html",
+              "java",
+              "javascript",
+              "json",
+              "julia",
+              "kotlin",
+              "lua",
+              "make",
+              "matlab",
+              "nim",
+              "nix",
+              "objc",
+              "ocaml",
+              "odin",
+              "pascal",
+              "perl",
+              "php",
+              "powershell",
+              "proto",
+              "python",
+              "r",
+              "racket",
+              "ruby",
+              "rust",
+              "scala",
+              "scheme",
+              "scss",
+              "solidity",
+              "sql",
+              "swift",
+              "tcl",
+              "toml",
+              "typescript",
+              "v",
+              "verilog",
+              "vhdl",
+              "wgsl",
+              "xml",
+              "yaml",
+              "zig"
+            ],
+            "path_class": null,
+            "type": "string"
+          },
+          "max_results": {
+            "default": 10,
+            "path_class": null,
+            "type": "integer"
+          },
+          "query": {
+            "path_class": null,
+            "type": "string"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "repos": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "path_class": null,
+            "type": "array"
+          },
+          "semantic": {
+            "default": false,
+            "path_class": null,
+            "type": "boolean"
+          },
+          "semantic_only": {
+            "default": false,
+            "path_class": null,
+            "type": "boolean"
+          },
+          "semantic_weight": {
+            "default": 0.7,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "path_class": null,
+            "type": "number"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "query"
+      ],
+      "untrusted": true
+    },
+    "search-text": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "search-text",
+      "params": {
+        "properties": {
+          "file_pattern": {
+            "path_class": "glob",
+            "type": "string"
+          },
+          "max_results": {
+            "default": 20,
+            "path_class": null,
+            "type": "integer"
+          },
+          "query": {
+            "path_class": null,
+            "type": "string"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "repos": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "path_class": null,
+            "type": "array"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "query"
+      ],
+      "untrusted": true
+    },
+    "trace-taint": {
+      "ci_exit_key": null,
+      "destructive": false,
+      "index_gate": false,
+      "operation": "trace-taint",
+      "params": {
+        "properties": {
+          "max_depth": {
+            "default": 10,
+            "path_class": null,
+            "type": "integer"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          },
+          "repo_path": {
+            "path_class": "host_path",
+            "type": "string"
+          },
+          "semgrep": {
+            "default": false,
+            "path_class": null,
+            "type": "boolean"
+          },
+          "source_calls": {
+            "items": {
+              "type": "string"
+            },
+            "path_class": null,
+            "type": "array"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo"
+      ],
+      "untrusted": true
+    },
+    "verify": {
+      "ci_exit_key": "passed",
+      "destructive": false,
+      "index_gate": false,
+      "operation": "verify",
+      "params": {
+        "properties": {
+          "max_age_hours": {
+            "path_class": null,
+            "type": "integer"
+          },
+          "repo": {
+            "path_class": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "required_args": [
+        "repo"
+      ],
+      "untrusted": true
+    }
+  },
+  "version": 1
+}

@@ -90,7 +90,10 @@ def indexed_project(tmp_path):
         allowed_roots=[str(project_dir)],
     )
     assert result["success"] is True, f"Index failed: {result}"
-    return result["repo"], str(storage), str(project_dir)
+    # The repo field is now wrapped as untrusted content (audit #2
+    # completion); unwrap before handing it to downstream tool calls that
+    # expect a plain "owner/name" identifier.
+    return _unwrap(result["repo"]), str(storage), str(project_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +282,7 @@ class TestCompareSymbols:
             allowed_roots=[str(project_dir)],
         )
         assert result_v1["success"] is True
-        repo_v1 = result_v1["repo"]
+        repo_v1 = _unwrap(result_v1["repo"])
 
         # Modify the file and re-index under a different repo name
         project_dir2 = tmp_path / "compareproj_v2"
@@ -298,7 +301,7 @@ class TestCompareSymbols:
             allowed_roots=[str(project_dir2)],
         )
         assert result_v2["success"] is True
-        repo_v2 = result_v2["repo"]
+        repo_v2 = _unwrap(result_v2["repo"])
 
         # Compare
         diff = compare_symbols(
@@ -329,7 +332,7 @@ class TestCompareSymbols:
             allowed_roots=[str(project_dir)],
         )
         assert result["success"] is True
-        repo_id = result["repo"]
+        repo_id = _unwrap(result["repo"])
 
         # Compare repo against itself
         diff = compare_symbols(
@@ -393,7 +396,7 @@ class TestGetChanges:
             allowed_roots=[str(project_dir)],
         )
         assert idx_result["success"] is True
-        repo = idx_result["repo"]
+        repo = _unwrap(idx_result["repo"])
 
         # Modify greet(), leave farewell() unchanged
         (project_dir / "app.py").write_text(

@@ -170,5 +170,6 @@ _spec = register(ToolSpec(
     ),
     index_gate=True,
     required_args=["url"],
+    untrusted=True,
     annotations=ToolAnnotations(title="Index Repository", readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True),
 ))

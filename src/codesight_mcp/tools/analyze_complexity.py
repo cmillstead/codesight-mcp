@@ -182,7 +182,9 @@ _spec = register(ToolSpec(
             },
             "limit": {
                 "type": "integer",
-                "description": "Maximum results (default 20, max 100)",
+                "description": "Maximum results (1-100, default 20)",
+                "minimum": 1,
+                "maximum": 100,
                 "default": 20,
             },
             "sort_by": {

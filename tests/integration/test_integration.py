@@ -41,7 +41,10 @@ def indexed_project(tmp_path):
         allowed_roots=[str(project_dir)],
     )
     assert result["success"] is True, f"Index failed: {result}"
-    return result["repo"], str(storage)
+    # The repo field is now wrapped as untrusted content (audit #2
+    # completion); unwrap before handing it to downstream tool calls that
+    # expect a plain "owner/name" identifier.
+    return _unwrap(result["repo"]), str(storage)
 
 
 def _unwrap(wrapped: str) -> str:

@@ -12,7 +12,7 @@ import re
 import stat as stat_module
 import threading
 import time
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,7 +22,11 @@ logger = logging.getLogger(__name__)
 
 from ..parser.symbols import Symbol  # noqa: E402
 from ..security import sanitize_repo_identifier, sanitize_signature_for_api  # noqa: E402
-from ..summarizer.batch_summarize import _contains_injection_phrase, _VALID_KINDS  # noqa: E402
+from ..summarizer.batch_summarize import (  # noqa: E402
+    _match_injection_rule,
+    _VALID_KINDS,
+)
+from ..core.freshness import age_threshold_exceeded, index_age_days, valid_git_head  # noqa: E402
 from ..core.limits import MAX_INDEX_SIZE, MAX_FILE_SIZE  # noqa: E402
 from ..core.locking import exclusive_file_lock, _UMASK_LOCK  # noqa: E402
 from ..core.validation import validate_path, ValidationError, is_within  # noqa: E402
@@ -46,7 +50,7 @@ def _check_posix_acls(path: str) -> None:
         # On Linux, the system.posix_acl_access xattr contains ACL entries.
         # If getxattr succeeds and the ACL has more than the 3 base entries
         # (owner, group, other), non-owner ACL entries are present.
-        acl_data = os.getxattr(path, b"system.posix_acl_access")
+        acl_data = getattr(os, "getxattr")(path, b"system.posix_acl_access")
         # POSIX ACL binary format: 4-byte version + 8 bytes per entry.
         # 3 base entries = 4 + 3*8 = 28 bytes. More than 28 = extra ACLs.
         if len(acl_data) > 28:
@@ -64,6 +68,32 @@ def _sanitize_list_item(item: str) -> str:
     # Strip C0 (0x00-0x1F), DEL (0x7F), C1 (0x80-0x9F)
     cleaned = "".join(c for c in item if not (ord(c) < 32 or ord(c) == 127 or 128 <= ord(c) <= 159))
     return sanitize_signature_for_api(cleaned)[:200]
+
+
+def _discard_injected_summary(sym: dict, counts: "Counter[str]") -> None:
+    """Clear `sym["summary"]` if it matches an injection rule, tallying the
+    fired rule id in `counts`. No-op if `summary` is missing, not a string,
+    or does not match. Shared by _sanitize_loaded_symbols and
+    incremental_save so the discard-and-tally logic lives in one place.
+    """
+    if isinstance(sym.get("summary"), str):
+        rule = _match_injection_rule(sym["summary"])
+        if rule:
+            sym["summary"] = ""
+            counts[rule] += 1
+
+
+def _log_injection_telemetry(counts: "Counter[str]") -> None:
+    """Emit exactly one aggregated log record with rule-id counts if any
+    summaries were discarded. Never logs the matched user text — only the
+    stable rule ids and their counts.
+    """
+    if counts:
+        logger.info(
+            "injection filter discarded %d summaries: %s",
+            sum(counts.values()),
+            dict(counts),
+        )
 
 
 def _safe_gzip_decompress(raw_bytes: bytes, max_size: int = MAX_INDEX_SIZE) -> bytes:
@@ -394,6 +424,7 @@ class IndexStore:
             "file_count": len(index.source_files),
             "languages": index.languages,
             "index_version": index.index_version,
+            "git_head": index.git_head,
         }
         meta_path = self._metadata_path(index.owner, index.name)
         self._atomic_write(meta_path, json.dumps(meta))
@@ -676,13 +707,13 @@ class IndexStore:
         # ADV-LOW-6: Validate content_hash format — must be a 64-char lowercase hex
         # string (SHA-256). Discard malformed hashes to prevent verify=True from
         # reporting a spurious mismatch against an arbitrary attacker-controlled string.
+        local_counts: Counter[str] = Counter()
         for sym in symbols:
             for fld in ("signature", "docstring", "summary", "name", "file"):
                 if fld in sym and isinstance(sym[fld], str):
                     sym[fld] = sanitize_signature_for_api(sym[fld])
             # ADV-MED-3: Clear summaries containing injection phrases
-            if isinstance(sym.get("summary"), str) and _contains_injection_phrase(sym["summary"]):
-                sym["summary"] = ""
+            _discard_injected_summary(sym, local_counts)
             if "decorators" in sym and isinstance(sym["decorators"], list):
                 sym["decorators"] = [
                     sanitize_signature_for_api(d) if isinstance(d, str) else d
@@ -704,6 +735,8 @@ class IndexStore:
             if hash_val is not None:
                 if not isinstance(hash_val, str) or not _HASH_RE.fullmatch(hash_val):
                     sym["content_hash"] = ""
+
+        _log_injection_telemetry(local_counts)
 
     def load_index(self, owner: str, name: str) -> Optional[CodeIndex]:
         """Load index from storage. Supports both gzip and legacy JSON formats."""
@@ -747,6 +780,8 @@ class IndexStore:
 
         self._sanitize_loaded_symbols(data["symbols"])
 
+        fh = data.get("file_hashes")
+        file_hashes = fh if isinstance(fh, dict) else {}
         try:
             index = CodeIndex(
                 repo=data["repo"],
@@ -757,7 +792,7 @@ class IndexStore:
                 languages=data["languages"],
                 symbols=data["symbols"],
                 index_version=stored_version,
-                file_hashes=data.get("file_hashes") if isinstance(data.get("file_hashes"), dict) else {},
+                file_hashes=file_hashes,
                 git_head=data.get("git_head", ""),
             )
         except (KeyError, TypeError, ValueError):
@@ -930,12 +965,13 @@ class IndexStore:
 
             # ADV-LOW-8: Re-sanitize kept symbols' text fields in case redaction
             # rules have been updated since they were last indexed.
+            local_counts: Counter[str] = Counter()
             for sym in kept_symbols:
                 for fld in ("signature", "docstring", "summary"):
                     if fld in sym and isinstance(sym[fld], str):
                         sym[fld] = sanitize_signature_for_api(sym[fld])
-                if isinstance(sym.get("summary"), str) and _contains_injection_phrase(sym["summary"]):
-                    sym["summary"] = ""
+                _discard_injected_summary(sym, local_counts)
+            _log_injection_telemetry(local_counts)
 
             # Add new symbols
             all_symbols_dicts = kept_symbols + [self._symbol_to_dict(s) for s in new_symbols]
@@ -990,7 +1026,14 @@ class IndexStore:
     _MAX_REPOS: int = 500
 
     def _read_metadata_sidecar(self, meta_path: Path) -> Optional[dict]:
-        """Read and validate a metadata sidecar file. Returns None on any error."""
+        """Read and validate a metadata sidecar file. Returns None on any error.
+
+        `indexed_at` is intentionally NOT part of the structural-validity
+        check: a missing/non-string value means the age is unknown, not that
+        the record is malformed. Fail-closed staleness (get_status) depends
+        on such repos still surfacing, so this normalizes indexed_at to None
+        rather than dropping the record. See list_repos().
+        """
         try:
             fd = os.open(str(meta_path), os.O_RDONLY | os.O_NOFOLLOW)
             with os.fdopen(fd, "r", encoding="utf-8") as f:
@@ -998,15 +1041,17 @@ class IndexStore:
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             logger.debug("Failed to read metadata sidecar %s: %s", meta_path, exc)
             return None
-        required = ("repo", "indexed_at", "symbol_count", "file_count", "languages", "index_version")
+        required = ("repo", "symbol_count", "file_count", "languages", "index_version")
         if not all(k in data for k in required):
             return None
-        if not isinstance(data.get("repo"), str) or not isinstance(data.get("indexed_at"), str):
+        if not isinstance(data.get("repo"), str):
             return None
         if not isinstance(data.get("symbol_count"), int) or not isinstance(data.get("file_count"), int):
             return None
         if not isinstance(data.get("languages"), dict):
             return None
+        if not isinstance(data.get("indexed_at"), str):
+            data["indexed_at"] = None
         return data
 
     def list_repos(self) -> list[dict]:
@@ -1016,7 +1061,7 @@ class IndexStore:
         to full index decompression for repos that lack a sidecar (backwards
         compatibility with indexes created before this feature).
         """
-        repos = []
+        repos: list[dict] = []
         seen_repos: set[str] = set()
 
         # Phase 1: read metadata sidecars (fast path)
@@ -1045,6 +1090,9 @@ class IndexStore:
                 "file_count": data["file_count"],
                 "languages": data["languages"],
                 "index_version": data.get("index_version", 1),
+                "index_age_days": index_age_days(data["indexed_at"]),
+                "age_threshold_exceeded": age_threshold_exceeded(data["indexed_at"]),
+                "git_head": valid_git_head(data.get("git_head")),
             })
 
         # Phase 2: fall back to full index reads for repos without sidecars
@@ -1082,9 +1130,12 @@ class IndexStore:
                     else:
                         data = json.loads(raw_bytes.decode("utf-8"))
 
-                    if not all(k in data for k in ("repo", "indexed_at", "symbols", "source_files", "languages")):
+                    # indexed_at is NOT required here: a missing/non-string
+                    # value means unknown age, not a malformed record (see
+                    # _read_metadata_sidecar for the equivalent Phase 1 rule).
+                    if not all(k in data for k in ("repo", "symbols", "source_files", "languages")):
                         continue
-                    if not isinstance(data.get("repo"), str) or not isinstance(data.get("indexed_at"), str):
+                    if not isinstance(data.get("repo"), str):
                         continue
 
                     repo_key = data["repo"]
@@ -1092,13 +1143,20 @@ class IndexStore:
                         continue
                     seen_repos.add(repo_key)
 
+                    indexed_at = data.get("indexed_at")
+                    if not isinstance(indexed_at, str):
+                        indexed_at = None
+
                     repos.append({
                         "repo": data["repo"],
-                        "indexed_at": data["indexed_at"],
+                        "indexed_at": indexed_at,
                         "symbol_count": len(data["symbols"]),
                         "file_count": len(data["source_files"]),
                         "languages": data["languages"],
                         "index_version": data.get("index_version", 1),
+                        "index_age_days": index_age_days(indexed_at),
+                        "age_threshold_exceeded": age_threshold_exceeded(indexed_at),
+                        "git_head": valid_git_head(data.get("git_head")),
                     })
                 except (OSError, gzip.BadGzipFile, json.JSONDecodeError, KeyError,
                         UnicodeDecodeError, ValueError) as exc:

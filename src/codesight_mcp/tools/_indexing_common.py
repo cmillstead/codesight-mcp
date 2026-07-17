@@ -9,6 +9,7 @@ import os
 from datetime import datetime, timezone
 from typing import Iterable
 
+from ..core.boundaries import make_meta, wrap_untrusted_content
 from ..core.limits import MAX_FILE_COUNT
 from ..parser import parse_file, LANGUAGE_EXTENSIONS
 from ..parser.graph import CodeGraph
@@ -148,14 +149,18 @@ def finalize_index(
     # Clear the in-memory graph cache so stale graphs aren't reused
     CodeGraph.clear_cache()
 
+    # ADV-HIGH-3 (audit #2): filenames come from the indexed repo/folder and
+    # are attacker-/caller-controlled -- frame them as untrusted, same as
+    # list_repos wraps disk-derived repo names.
     result: dict = {
         "success": True,
-        "repo": f"{owner}/{name}",
+        "repo": wrap_untrusted_content(f"{owner}/{name}"),
         "indexed_at": indexed_at,
         "file_count": len(parsed_files),
         "symbol_count": len(all_symbols),
         "languages": languages,
-        "files": parsed_files[:20],  # Limit files in response
+        "files": [wrap_untrusted_content(f) for f in parsed_files[:20]],  # Limit files in response
+        "_meta": make_meta(source="index", trusted=False),
     }
 
     if source_file_count >= max_file_count:

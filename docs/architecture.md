@@ -1,5 +1,7 @@
 # Architecture — codesight-mcp
 
+<!-- codesight:counts ops=34 langs=66 tests=2562 -->
+
 > Generated: 2026-03-09 | Scan Level: Exhaustive | Project Type: Python Library (MCP Server)
 
 ## Executive Summary
@@ -142,6 +144,8 @@ Security and infrastructure primitives used by all other layers:
 | `locking.py` | File locking | `exclusive_file_lock()` context manager, `ensure_private_dir()` |
 | `security.py` | Secret detection | `is_secret_file()`, `sanitize_repo_identifier()`, `sanitize_signature_for_api()` |
 | `discovery.py` | File discovery | `discover_local_files()` with gitignore, binary detection, symlink filtering |
+| `freshness.py` | Index-age parsing + staleness policy | Backs get_status/list_repos staleness |
+| `platform_check.py` | Startup guard | Fail-fast POSIX-only startup guard |
 
 ### Summarizer Layer (`summarizer/`)
 
@@ -255,7 +259,7 @@ graph LR
 | Server/Registry | 109 (6%) | Dispatch, sanitization, tool registration, structured logging |
 | Integration | 67 (4%) | Full pipeline: index → query → verify |
 | Stress/Fuzz/Benchmark | 33 (2%) | Load testing, fuzzing, performance benchmarks |
-| **Total** | **2,495** | |
+| **Total** | **2,562** | |
 
 Testing philosophy: security tests use real filesystems with no mocking, adversarial tests attempt to break security boundaries.
 

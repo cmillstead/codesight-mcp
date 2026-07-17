@@ -49,6 +49,8 @@ def get_repo_outline(
     ms = elapsed_ms(start)
 
     return {
+        # repo is the sanitized request identifier (sanitize_repo_identifier: alnum/-/_/. only),
+        # not disk-derived like list_repos/verify -- safe to return unwrapped.
         "repo": f"{owner}/{name}",
         "indexed_at": index.indexed_at,
         "file_count": len(index.source_files),
@@ -85,5 +87,6 @@ _spec = register(ToolSpec(
         storage_path=storage_path,
     ),
     required_args=["repo"],
+    untrusted=True,
     annotations=ToolAnnotations(title="Get Repository Outline", readOnlyHint=True, openWorldHint=False),
 ))

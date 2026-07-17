@@ -1,5 +1,7 @@
 # codesight-mcp
 
+<!-- codesight:counts ops=34 langs=66 tests=2562 -->
+
 <p align="center">
   <br>
   <b>Security-hardened, token-efficient code intelligence for AI assistants.</b>
@@ -9,7 +11,7 @@
   </a>
   <img src="https://img.shields.io/badge/MCP-Compatible-green?style=flat-square" alt="MCP Compatible">
   <img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square&logo=python" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/tests-2495-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-2562-brightgreen?style=flat-square" alt="Tests">
 </p>
 
 An **MCP server** that indexes local and GitHub codebases via tree-sitter AST parsing, then exposes 34 operations through a single `query` dispatch tool for symbol retrieval, code graph traversal, and impact analysis — all with byte-offset precision to cut token costs by ~99% compared to sending full files. Supports 66 languages.
@@ -54,7 +56,7 @@ Based on [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) by J. Gra
 - **Content boundary markers** — indirect prompt injection defense (Microsoft spotlighting research)
 - **Error sanitization** — raw exceptions never reach the AI; system paths are always stripped
 - **Single dispatch tool** — one `query(operation, params)` MCP tool exposes all 34 operations; output from untrusted operations is framed with `<UNTRUSTED_OUTPUT>` markers to resist indirect prompt injection
-- **2,495 tests** — adversarial, security, integration, benchmark, fuzz, and stress coverage with real temp directories
+- **2,562 tests** — adversarial, security, integration, benchmark, fuzz, and stress coverage with real temp directories
 
 ---
 
@@ -67,6 +69,8 @@ Each language parser extracts functions, classes, methods, parameters, call rela
 ---
 
 ## Quick Start
+
+Platform support: POSIX only (Linux/macOS); Windows is not supported.
 
 ### Step 1: Install
 
@@ -86,7 +90,7 @@ Use `claude mcp add` to register the dispatch wrapper. This registers a single t
 claude mcp add codesight \
   -e CODESIGHT_ALLOWED_ROOTS=/Users/you/src \
   -e GITHUB_TOKEN=ghp_... \
-  -- bun run ~/.claude/servers/codesight/mcp-server.ts
+  -- bun run ~/src/codesight-plugin/mcp-server.ts
 ```
 
 | Variable | Required | Description |

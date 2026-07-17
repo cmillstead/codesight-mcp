@@ -4,6 +4,7 @@ import os
 from typing import Optional
 
 from ..core.boundaries import make_meta
+from ..core.freshness import INDEX_AGE_THRESHOLD_DAYS
 from ..security import _NO_REDACT
 from ..storage import INDEX_VERSION
 from ._common import timed, elapsed_ms, _get_shared_store
@@ -37,6 +38,36 @@ def get_status(storage_path: Optional[str] = None) -> dict:
             "timing_ms": ms,
         },
     }
+
+    # Staleness surface — aggregate counts only, no repo-name strings
+    # (get_status is a trusted envelope).
+    aged = sum(1 for r in repos if r.get("age_threshold_exceeded") is True)
+    # UNKNOWN age (unparseable or meaningfully-future indexed_at) must never be
+    # silently treated as fresh -- fail closed by surfacing it as its own bucket.
+    unknown = sum(
+        1 for r in repos
+        if "age_threshold_exceeded" in r and r["age_threshold_exceeded"] is None
+    )
+    known = [r["index_age_days"] for r in repos if r.get("index_age_days") is not None]
+    result["aged_repo_count"] = aged
+    result["unknown_age_repo_count"] = unknown
+    if known:
+        result["oldest_index_age_days"] = max(known)
+    if aged or unknown:
+        parts = []
+        if aged:
+            parts.append(
+                f"{aged} indexed repo(s) exceed the {INDEX_AGE_THRESHOLD_DAYS}-day freshness threshold"
+            )
+        if unknown:
+            parts.append(
+                f"{unknown} indexed repo(s) have an unparseable-or-future indexed_at timestamp "
+                "and are treated as NOT fresh"
+            )
+        result["staleness_warning"] = (
+            "; ".join(parts) + "; re-index with `codesight-mcp index-folder --path <dir>` or "
+            "`codesight-mcp index-repo <url>`."
+        )
 
     # ADV-LOW-11: Warn when redaction is disabled
     if _NO_REDACT:

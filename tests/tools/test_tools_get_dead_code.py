@@ -435,8 +435,49 @@ class TestGetDeadCodeEdgeCases:
             assert "language" in sym
 
 
-def test_get_dead_code_respects_limit(tmp_path):
-    """get_dead_code should accept and enforce a limit parameter."""
-    import inspect
-    sig = inspect.signature(get_dead_code)
-    assert "limit" in sig.parameters, "get_dead_code should accept a limit parameter"
+def test_get_dead_code_effective_limit_is_capped_at_100(tmp_path):
+    """The effective cap on returned dead-code results is 100, even when the
+    caller requests more. This must hold regardless of the tool's local
+    ``_MAX_DEAD_CODE`` clamp, because the global dispatch-level sanitizer
+    (``_INT_PARAM_BOUNDS["limit"]`` in server.py) already caps ``limit`` at
+    100 for every tool before the handler ever runs.
+    """
+    from codesight_mcp.server import _INT_PARAM_BOUNDS
+
+    # Arrange: an indexed repo with 150 dead (uncalled) symbols -- more than
+    # the 100-result cap so the clamp is actually exercised.
+    extra_symbols = []
+    for i in range(150):
+        fn_name = f"deadfn_{i}"
+        fn_src = f"def {fn_name}():\n    pass\n"
+        extra_symbols.append(
+            Symbol(
+                id=f"many.py::{fn_name}#function",
+                file="many.py",
+                name=fn_name,
+                qualified_name=fn_name,
+                kind="function",
+                language="python",
+                signature=f"def {fn_name}():",
+                line=i * 2 + 1,
+                end_line=i * 2 + 2,
+                byte_offset=0,
+                byte_length=len(fn_src),
+                content_hash=_make_src_hash(fn_src),
+            )
+        )
+    _make_indexed_repo(tmp_path, extra_symbols=extra_symbols)
+
+    # Act: request far more than the effective cap.
+    result = get_dead_code(
+        repo="local/testapp",
+        limit=300,
+        storage_path=str(tmp_path),
+    )
+
+    # Assert: the tool never returns more than 100 results, and the global
+    # dispatch-level bound that enforces this ceiling for every tool call is
+    # pinned at (1, 100).
+    assert "error" not in result
+    assert len(result["symbols"]) <= 100
+    assert _INT_PARAM_BOUNDS["limit"] == (1, 100)

@@ -32,7 +32,7 @@ def scan_security(
         repo: Repository identifier (owner/repo or just repo name).
         category: Optional category filter (e.g. "owasp-a03", "cwe-94").
         severity: Optional minimum severity threshold (critical, high, medium, low).
-        limit: Maximum findings to return (1-500, default 100).
+        limit: Maximum findings to return (1-100, default 100).
         storage_path: Custom storage path.
 
     Returns:
@@ -249,7 +249,9 @@ _spec = register(ToolSpec(
             },
             "limit": {
                 "type": "integer",
-                "description": "Maximum findings to return (1-500, default 100)",
+                "description": "Maximum findings to return (1-100, default 100)",
+                "minimum": 1,
+                "maximum": 100,
                 "default": 100,
             },
         },

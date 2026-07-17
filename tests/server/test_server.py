@@ -125,9 +125,17 @@ async def test_destructive_tools_have_consent_warning():
 
 @pytest.mark.asyncio
 async def test_safe_tools_have_no_untrusted_warning():
-    """Non-source tools should not carry the untrusted-content warning."""
+    """Non-source tools should not carry the untrusted-content warning.
+
+    list_repos, get_file_tree, and get_repo_outline are deliberately NOT
+    listed here -- they return disk-derived data (repo names, file paths,
+    directory names) and are marked untrusted=True to match their actual
+    _meta.contentTrust (see test_tool_trust_invariant.py). Only tools that
+    return purely server-computed metadata (no disk-derived strings) belong
+    in this set.
+    """
     tools = await list_tools()
-    safe_tools = {"list_repos", "get_file_tree", "get_repo_outline"}
+    safe_tools = {"get_status", "get_usage_stats"}
 
     for tool in tools:
         if tool.name in safe_tools:
@@ -451,7 +459,15 @@ class TestGetFileTreePathPrefixValidation:
 # -- SEC-LOW-5: type-validate list_repos fields --------------------------------
 
 class TestListReposTypeValidation:
-    """SEC-LOW-5: list_repos must skip entries with non-string repo/indexed_at."""
+    """SEC-LOW-5: list_repos must skip entries with a non-string repo name.
+
+    A non-string/missing indexed_at is a SEPARATE case (Codex P2 finding
+    F2): such entries are structurally valid and must be INCLUDED with
+    unknown-age fields (index_age_days=None, age_threshold_exceeded=None)
+    rather than dropped -- dropping them would make a corrupt/forged index
+    invisible to get_status's fail-closed staleness surface instead of
+    flagging it as unknown.
+    """
 
     def test_malformed_repo_null_is_skipped(self, tmp_path):
         """An entry with 'repo': null must be silently skipped."""
@@ -493,8 +509,10 @@ class TestListReposTypeValidation:
         assert "validowner/validrepo" in repo_names
         assert any(r is None for r in repo_names) is False
 
-    def test_malformed_indexed_at_null_is_skipped(self, tmp_path):
-        """An entry with 'indexed_at': null must be silently skipped."""
+    def test_malformed_indexed_at_null_is_included_as_unknown_age(self, tmp_path):
+        """An entry with 'indexed_at': null must be INCLUDED as unknown-age,
+        not skipped (Codex P2 F2 -- dropping it would make the repo
+        invisible instead of flagged as unknown)."""
         from codesight_mcp.storage.index_store import IndexStore
         import json as _json
 
@@ -516,7 +534,11 @@ class TestListReposTypeValidation:
         bad_path.write_text(_json.dumps(malformed))
 
         repos = store.list_repos()
-        assert len(repos) == 0
+        assert len(repos) == 1
+        assert repos[0]["repo"] == "owner/repo"
+        assert repos[0]["indexed_at"] is None
+        assert repos[0]["index_age_days"] is None
+        assert repos[0]["age_threshold_exceeded"] is None
 
 
 # -- SEC-LOW-7: mkdir mode 0o700 for content directories ----------------------

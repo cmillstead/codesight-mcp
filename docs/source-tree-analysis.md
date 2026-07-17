@@ -1,5 +1,7 @@
 # Source Tree Analysis — codesight-mcp
 
+<!-- codesight:counts ops=34 langs=66 tests=2562 -->
+
 > Generated: 2026-03-09 | Scan Level: Exhaustive | Project Type: Python Library (MCP Server)
 
 ## Directory Structure
@@ -9,10 +11,19 @@ codesight-mcp/
 ├── pyproject.toml              # Build config (hatchling), dependencies, entry point
 ├── uv.lock                     # Deterministic dependency lockfile
 ├── README.md                   # Project overview and usage
+├── CHANGELOG.md                # Release history
 ├── SECURITY.md                 # Security policy
 ├── CLAUDE.md                   # AI assistant navigation guide
 ├── benchmark/                  # Performance benchmarks
 │   └── bench_parse.py          # Parser benchmark script
+├── contract/                   # Exported operation contract snapshot
+│   └── operations.json         # Canonical operation contract, source of truth for the out-of-repo TS dispatch wrapper (codesight-plugin)
+├── scripts/                    # Dev/CI utility scripts
+│   ├── benchmark_latency.py    # Latency benchmark harness
+│   ├── check_counts.py         # Doc-count CI gate (ops/langs/tests markers)
+│   ├── ci-local.sh             # Run the CI pipeline locally
+│   ├── export_contract.py      # Operation-contract snapshot generator
+│   └── test-changed.sh         # Run tests scoped to changed files
 ├── src/codesight_mcp/          # Main package (41 source files)
 │   ├── __init__.py             # Package init
 │   ├── server.py               # ★ ENTRY POINT — MCP server, tool dispatch, argument sanitization
@@ -21,8 +32,10 @@ codesight-mcp/
 │   ├── core/                   # Infrastructure & security primitives
 │   │   ├── boundaries.py       # Untrusted content wrapping (prompt injection defense)
 │   │   ├── errors.py           # Error sanitization (path stripping, generic fallbacks)
+│   │   ├── freshness.py        # Index-age parsing + staleness policy (get_status/list_repos)
 │   │   ├── limits.py           # Resource constants (MAX_FILE_SIZE=500KB, MAX_INDEX_SIZE=200MB, etc.)
 │   │   ├── locking.py          # Atomic writes, exclusive file locks, symlink-safe I/O
+│   │   ├── platform_check.py   # Fail-fast POSIX-only startup guard
 │   │   ├── rate_limiting.py    # Per-tool (60/min) + global (300/min) rate limiting
 │   │   └── validation.py       # 6-step path validation chain (traversal, symlinks, containment)
 │   ├── parser/                 # AST parsing engine
@@ -61,7 +74,7 @@ codesight-mcp/
 │       ├── get_key_symbols.py  # PageRank-based structural importance ranking
 │       ├── get_diagram.py      # Mermaid diagram generation (call_graph, hierarchy, imports, impact)
 │       └── get_dead_code.py    # Unused symbol detection (zero callers)
-├── tests/                      # Test suite (2,495 tests)
+├── tests/                      # Test suite (2,562 tests)
 │   ├── conftest.py             # Shared fixtures (tmp_index_store, python_index)
 │   ├── core/                   # Core infrastructure tests (85 tests)
 │   │   ├── test_core_boundaries.py

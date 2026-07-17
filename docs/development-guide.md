@@ -1,5 +1,7 @@
 # Development Guide — codesight-mcp
 
+<!-- codesight:counts ops=34 langs=66 tests=2562 -->
+
 > Generated: 2026-03-09 | Project Type: Python Library (MCP Server)
 
 ## Prerequisites
@@ -9,6 +11,7 @@
 | Python | 3.10+ | CI uses 3.12 |
 | uv | Latest | Package manager (preferred over pip) |
 | Git | Any | For cloning and hooks |
+| Platform | POSIX | Linux/macOS only — Windows unsupported (relies on `fcntl.flock`, `os.getuid`, `O_NOFOLLOW`); startup fails fast on non-POSIX |
 
 **Optional:**
 - `ANTHROPIC_API_KEY` — Enables AI-generated symbol summaries (falls back to docstrings)
@@ -65,7 +68,7 @@ The server communicates via MCP protocol (stdio). It's typically configured in a
 # Install test dependencies
 uv sync --extra test
 
-# Run all tests (2,495 tests)
+# Run all tests (2,562 tests)
 uv run pytest --tb=short -q
 
 # Run specific test categories
@@ -153,6 +156,7 @@ See [source-tree-analysis.md](./source-tree-analysis.md) for the full annotated 
 - Steps: checkout → install uv → Python 3.12 → `uv sync --frozen --extra test` → `uv run pytest --tb=short -q`
 - No secrets required in CI
 - Deterministic: uses frozen lockfile
+- `typecheck` job: mypy over a scoped file set via the `typecheck` dependency group (`uv sync --frozen --group typecheck` → `uv run --group typecheck mypy`), running on every push/PR alongside `lint` (ruff) and the sharded `test` job
 
 ## Git Hooks
 

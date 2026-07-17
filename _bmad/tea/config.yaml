@@ -3,6 +3,7 @@
 # Version: 6.0.4
 # Date: 2026-03-10T05:14:14.091Z
 
+output_folder: _bmad-output
 test_artifacts: "{project-root}/{output_folder}/test-artifacts"
 tea_use_playwright_utils: true
 tea_use_pactjs_utils: true

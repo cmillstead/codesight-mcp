@@ -1,6 +1,8 @@
 """Tests for diff-aware (git-based) indexing in index_folder (Task 19)."""
 
-from unittest.mock import patch, MagicMock
+import re
+
+from unittest.mock import patch, MagicMock  # mock-ok: pre-existing git-subprocess mocking (out of scope for this fix)
 import subprocess
 
 
@@ -11,6 +13,19 @@ from codesight_mcp.tools.index_folder import (
     index_folder,
 )
 from codesight_mcp.storage.index_store import IndexStore
+
+_SPOTLIGHT_RE = re.compile(
+    r"<<<UNTRUSTED_CODE_[0-9a-f]+>>>\n|\n<<<END_UNTRUSTED_CODE_[0-9a-f]+>>>"
+)
+
+
+def _unwrap_repo(value: str) -> str:
+    """Strip untrusted-content boundary markers to recover the raw repo string.
+
+    Test-only helper: production code must never do this (it would defeat
+    the trust boundary). Tests need the raw "owner/name" to load the store
+    directly, since the tool response now wraps it (audit #2 completion)."""
+    return _SPOTLIGHT_RE.sub("", value)
 
 
 class TestIsGitRepo:
@@ -131,7 +146,7 @@ class TestDiffAwareIndexing:
 
         # Verify git_head was stored
         store = IndexStore(base_path=str(storage))
-        owner, name = result["repo"].split("/", 1)
+        owner, name = _unwrap_repo(result["repo"]).split("/", 1)
         idx = store.load_index(owner, name)
         assert idx is not None
         assert idx.git_head == "abc123def"
@@ -154,7 +169,7 @@ class TestDiffAwareIndexing:
 
         assert result["success"] is True
         store = IndexStore(base_path=str(storage))
-        owner, name = result["repo"].split("/", 1)
+        owner, name = _unwrap_repo(result["repo"]).split("/", 1)
         idx = store.load_index(owner, name)
         assert idx is not None
         assert idx.git_head == ""
@@ -223,7 +238,7 @@ class TestDiffAwareIndexing:
 
         # Verify the index was updated with new git_head
         store = IndexStore(base_path=str(storage))
-        owner, name = result2["repo"].split("/", 1)
+        owner, name = _unwrap_repo(result2["repo"]).split("/", 1)
         idx = store.load_index(owner, name)
         assert idx.git_head == "b" * 40
         # Both files should still be in the index

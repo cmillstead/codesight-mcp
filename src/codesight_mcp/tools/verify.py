@@ -6,14 +6,21 @@ from typing import Optional
 from mcp.types import ToolAnnotations
 
 from ..core.boundaries import make_meta, wrap_untrusted_content
+from ..core.freshness import (
+    INDEX_AGE_THRESHOLD_DAYS,
+    age_threshold_exceeded,
+    parse_indexed_at,
+)
 from ..storage import INDEX_VERSION
 from ._common import RepoContext, timed, elapsed_ms
 from .registry import ToolSpec, register
 
+_DEFAULT_MAX_AGE_HOURS = INDEX_AGE_THRESHOLD_DAYS * 24
+
 
 def verify(
     repo: str,
-    max_age_hours: int = 168,
+    max_age_hours: int = _DEFAULT_MAX_AGE_HOURS,
     storage_path: Optional[str] = None,
 ) -> dict:
     """Fast pass/fail health check for CI gates.
@@ -41,13 +48,15 @@ def verify(
     }
 
     # Check 3: freshness
-    try:
-        indexed_dt = datetime.fromisoformat(ctx.index.indexed_at)
-        age_hours = (datetime.now(timezone.utc) - indexed_dt).total_seconds() / 3600
-        fresh = age_hours <= max_age_hours
-    except (ValueError, TypeError):
+    indexed_dt = parse_indexed_at(ctx.index.indexed_at)
+    exceeded = age_threshold_exceeded(ctx.index.indexed_at, threshold_days=max_age_hours / 24.0)
+    if indexed_dt is None or exceeded is None:
+        # Unparseable or future (beyond clock-skew tolerance) -- fail closed.
         age_hours = -1
         fresh = False
+    else:
+        age_hours = (datetime.now(timezone.utc) - indexed_dt).total_seconds() / 3600
+        fresh = not exceeded
     checks["freshness"] = {
         "passed": fresh,
         "indexed_at": ctx.index.indexed_at,
@@ -118,17 +127,21 @@ _spec = register(ToolSpec(
             },
             "max_age_hours": {
                 "type": "integer",
-                "description": "Fail if index is older than N hours. Default: 168 (1 week).",
+                "description": (
+                    f"Fail if index is older than N hours. "
+                    f"Default: {_DEFAULT_MAX_AGE_HOURS} ({INDEX_AGE_THRESHOLD_DAYS} days)."
+                ),
             },
         },
         "required": ["repo"],
     },
     handler=lambda args, storage_path: verify(
         repo=args["repo"],
-        max_age_hours=args.get("max_age_hours", 168),
+        max_age_hours=args.get("max_age_hours", _DEFAULT_MAX_AGE_HOURS),
         storage_path=storage_path,
     ),
     required_args=["repo"],
+    untrusted=True,
     annotations=ToolAnnotations(
         title="Verify Index",
         readOnlyHint=True,
