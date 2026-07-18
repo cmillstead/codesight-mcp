@@ -326,7 +326,7 @@ requires-dist = [
     { name = "fastembed", marker = "extra == 'semantic'", specifier = ">=0.4.0,<1.0.0" },
     { name = "httpx", specifier = ">=0.27.0,<1.0.0" },
     { name = "mcp", specifier = ">=1.26.0,<2.0.0" },
-    { name = "pathspec", specifier = ">=0.12.0,<1.0.0" },
+    { name = "pathspec", specifier = ">=0.12.0,<2.0.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=7.0.0,<10.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.21.0,<1.0.0" },
     { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=4.0.0,<8.0.0" },
@@ -350,7 +350,7 @@ requires-dist = [
 provides-extras = ["test", "semantic"]
 
 [package.metadata.requires-dev]
-typecheck = [{ name = "mypy", specifier = ">=1.11,<2.0" }]
+typecheck = [{ name = "mypy", specifier = ">=1.11,<3.0" }]
 
 [[package]]
 name = "colorama"
