@@ -6,6 +6,8 @@ build/
 .venv/
 .pytest_cache/
 docs/plans/
+docs/retros/
+docs/project-evals.md
 .aegis/
 .paul/
 .env
