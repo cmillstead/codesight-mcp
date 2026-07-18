@@ -50,7 +50,7 @@ semantic = [
 ]
 
 [dependency-groups]
-typecheck = ["mypy>=1.11,<2.0"]
+typecheck = ["mypy>=1.11,<3.0"]
 
 [build-system]
 requires = ["hatchling==1.27.0"]
